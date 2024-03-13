@@ -43,6 +43,7 @@ parser.add_argument("--scanvi_predict", default = False)
 args = parser.parse_args()
 
 adata = sc.read_h5ad(args.h5ad_input)
+#adata.raw = adata
 adata.obs['capture_study'] = [a + '_' + b for a,b in zip(list(adata.obs.capture_type),list(adata.obs.study_accession))]
 adata.obs.MajorCellType = adata.obs.MajorCellType.cat.add_categories('unlabelled')
 adata.obs.MajorCellType = adata.obs.MajorCellType.fillna('unlabelled')
@@ -162,7 +163,12 @@ else:
 adata_full = run_umap(adata_full)
 
 if args.scanvi_predict:
-    print("Run scANVI CellType Prediction")
+    print("\n\nRun scANVI CellType Prediction")
+   
+    print("\n\nRemove any NEW celltypes present in the query data but not the reference")
+    remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
+    adata_full.obs['MajorCellType'][adata_full.obs['MajorCellType'].isin(remove_ct)] = 'unlabelled'
+    
     scanvi_model = scvi.model.SCANVI.from_scvi_model(
         vae_ref,
         unlabeled_category="unlabelled",
@@ -178,11 +184,13 @@ if args.scanvi_predict:
     SCANVI_LATENT_KEY = "X_scANVI"
     SCANVI_PREDICTION_KEY = "MCT_scANVI"
     
-    remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
-    adata_full.obs['MajorCellType'][adata_full.obs['MajorCellType'].isin(remove_ct)] = 'unlabelled'
 
     adata_full.obsm[SCANVI_LATENT_KEY] = scanvi_query.get_latent_representation(adata_full)
     adata_full.obs[SCANVI_PREDICTION_KEY] = scanvi_query.predict(adata_full)
+
+    sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['MCT_scANVI'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MCT_scANVI.png')
+
+    scanvi_model.save(args.scanvi_predict, overwrite=True, save_anndata =True)
 
 sc.pp.log1p(adata_full)
 sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['MajorCellType'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MajorCellType.png')
