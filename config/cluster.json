@@ -1,0 +1,18 @@
+{
+	"__default__" :
+	{
+		"partition" : "quick",
+		"time" : "04:00:00",
+		"mem" : "128G",
+		"extra" : " --gres=lscratch:2",
+		"output"  : "00log/{rule}_{wildcards}.out",
+		"error" : "00log/{rule}_{wildcards}.err" 
+	},
+	"run_scvi":
+	{
+		"time" : "08:00:00",
+		"mem" : "128G",
+		"partition" : "gpu",
+		"extra" : " --gres=gpu:a100:1,lscratch:5"
+	}
+}
