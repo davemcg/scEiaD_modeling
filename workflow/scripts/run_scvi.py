@@ -15,6 +15,9 @@ import cupy as cp
 import rapids_singlecell as rsc
 import rmm
 from rmm.allocators.cupy import rmm_cupy_allocator
+from scib_metrics.benchmark import Benchmarker
+
+
 rmm.reinitialize(
     managed_memory=False, # Allows oversubscription
     pool_allocator=False, # default is False
@@ -40,6 +43,7 @@ parser.add_argument("--min_dist", default = 0.3, type = float)
 parser.add_argument("--hvg_span", default = 0.5, type = float)
 parser.add_argument("--gene_count_filter", default = 300, type = int)
 parser.add_argument("--scanvi_predict", default = False)
+parser.add_argument("--scib", default = False)
 args = parser.parse_args()
 
 adata = sc.read_h5ad(args.h5ad_input)
@@ -132,7 +136,7 @@ SCVI_LATENT_KEY = "X_scVI"
 adata_ref.obsm[SCVI_LATENT_KEY] = vae_ref.get_latent_representation()
 
 adata_ref_u = run_umap(adata_ref)
-adata_ref_u.obs.to_csv("temp.csv.gz")
+#adata_ref_u.obs.to_csv("temp.csv.gz")
 
 # optional projection of new (query) data onto the ref model
 if args.query_csv:
@@ -209,4 +213,22 @@ sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['log_n_counts'], sa
 vae_ref.save(args.scVI_model_output_path, overwrite=True, save_anndata =True)
 adata_full.write_h5ad(args.h5ad_output)
 adata_full.obs.to_csv(args.obs_csv_output)
+
+# benchmarker
+if args.scib:
+    sc.tl.pca(adata_full)
+    bm = Benchmarker(
+        adata_full,
+        batch_key=covariate,
+        label_key="MajorCellType",
+        embedding_obsm_keys=["X_pca", "X_scVI"],
+        n_jobs=2,
+    )
+
+    bm.benchmark()
+
+    bm_res = bm.get_results(min_max_scale=False)
+
+    bm_res.to_csv(args.scib)
+
 

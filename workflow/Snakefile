@@ -1,0 +1,77 @@
+from snakemake.utils import min_version
+min_version("7.0")
+
+
+git_dir = config['git_dir'] 
+
+rule all:
+	input:
+		expand(config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.difftesting.{against}.csv.gz',
+				hvg = config['hvg'],
+				epochs = config['epochs'],
+				latent = config['latent'],
+				against = ['leiden3','MajorCellType']),
+		expand(config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.pseudoBulk.{against}.csv.gz',
+				hvg = config['hvg'],
+				epochs = config['epochs'],
+				latent = config['latent'],
+				against = ['leiden3','MajorCellType'])
+
+rule run_scvi:
+	input:
+		config['input_h5ad']
+	output:
+		obs = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.obs.csv.gz',
+		scib = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.scib.csv'
+	conda:
+		"rscvi"
+	shell:
+		"""
+		python {git_dir}/workflow/scripts/run_scvi.py \
+			{input} \
+			{config[ref_bcs]} \
+			{config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
+			scviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
+			{config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.h5ad \
+			{config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.obs.csv.gz \
+			--query_csv {config[query_bcs]} \
+			--n_top_genes {wildcards.hvg} \
+			--n_epochs {wildcards.epochs} \
+			--n_latent {wildcards.latent} \
+			--input_type barcode \
+			--scanvi scanviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
+			--scib {config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.scib.csv
+		"""
+
+rule diff_testing:
+	input:
+		h5ad =  config['input_h5ad'],
+		obs = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.obs.csv.gz'
+	output:
+		config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.difftesting.{against}.csv.gz'
+	conda:
+		"rscvi"
+	shell:
+		"""
+		python {git_dir}/workflow/scripts/diff_testing.py \
+			{input} \
+			{wildcards.against} \
+			{output}
+		"""
+	
+rule pseudo_bulk:
+	input:
+		h5ad = config['input_h5ad'],
+		obs = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.obs.csv.gz'
+	output:
+		config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.pseudoBulk.{against}.csv.gz'
+	conda:
+		"rscvi"
+	shell:
+		"""
+		# python ~/git/scEiaD_modeling/workflow/scripts/make_pseudobulk.py hs111.adata.solo.2024_03_07.h5ad hs111_mature_alleye_5000hvg_50e_30l.obs.csv.gz MajorCellType hs111_mature_alleye.pseudodbulk.MajorCellType.csv.gz
+		python {git_dir}/workflow/scripts/make_pseudobulk.py \
+			{input} \
+			{wildcards.against} \
+			{output}
+		"""
