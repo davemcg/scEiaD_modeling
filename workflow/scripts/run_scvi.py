@@ -17,7 +17,7 @@ import rmm
 from rmm.allocators.cupy import rmm_cupy_allocator
 from scib_metrics.benchmark import Benchmarker
 
-
+print("\n\nscvi version is: " + scvi.__version__ + "\n\n")
 rmm.reinitialize(
     managed_memory=False, # Allows oversubscription
     pool_allocator=False, # default is False
@@ -84,6 +84,7 @@ def run_umap(adata_u):
     rsc.tl.leiden(adata_u)
     rsc.tl.leiden(adata_u, key_added = 'leiden2', resolution = 2)
     rsc.tl.leiden(adata_u, key_added = 'leiden3', resolution = 3)
+    rsc.tl.leiden(adata_u, key_added = 'leiden5', resolution = 5)
     rsc.tl.umap(adata_u, min_dist = args.min_dist)
     
     umap = pd.DataFrame(adata_u.obsm['X_umap'])
@@ -168,20 +169,23 @@ adata_full = run_umap(adata_full)
 
 if args.scanvi_predict:
     print("\n\nRun scANVI CellType Prediction")
-   
+     
     print("\n\nRemove any NEW celltypes present in the query data but not the reference")
-    remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
-    adata_full.obs['MajorCellType'][adata_full.obs['MajorCellType'].isin(remove_ct)] = 'unlabelled'
     
+    scanvi_epochs = min(50, args.n_epochs)
+    remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
+    print(remove_ct)
+    adata_full.obs['MajorCellType'][adata_full.obs['MajorCellType'].isin(remove_ct)] = 'unlabelled'
+    adata_full.obs['MajorCellType'] = pd.Categorical(adata_full.obs['MajorCellType']).remove_unused_categories()    
     scanvi_model = scvi.model.SCANVI.from_scvi_model(
         vae_ref,
         unlabeled_category="unlabelled",
         labels_key='MajorCellType',
     )
-    scanvi_model.train(max_epochs=args.n_epochs)
+    scanvi_model.train(max_epochs=scanvi_epochs)
     scanvi_query = scvi.model.SCANVI.load_query_data(adata_full, scanvi_model)
     scanvi_query.train(
-        max_epochs=args.n_epochs,
+        max_epochs=scanvi_epochs,
         plan_kwargs={"weight_decay": 0.0},
         check_val_every_n_epoch=10,
     )
@@ -211,6 +215,10 @@ adata_full.obs['log_n_counts'] = np.log1p(adata_full.obs.n_counts)
 sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['log_n_counts'], save = args.plot_prefix + '_log_n_counts.png')
 
 vae_ref.save(args.scVI_model_output_path, overwrite=True, save_anndata =True)
+# write hvg 
+hvg = pd.DataFrame(adata_ref.var_names)
+hvg.to_csv(args.scVI_model_output_path + '/hvg.csv.gz')
+
 adata_full.write_h5ad(args.h5ad_output)
 adata_full.obs.to_csv(args.obs_csv_output)
 
