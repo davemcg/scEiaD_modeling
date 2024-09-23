@@ -42,8 +42,12 @@ parser.add_argument("--n_latent", default = 30, type = int)
 parser.add_argument("--min_dist", default = 0.3, type = float)
 parser.add_argument("--hvg_span", default = 0.5, type = float)
 parser.add_argument("--gene_count_filter", default = 300, type = int)
-parser.add_argument("--scanvi_predict", default = False)
+parser.add_argument("--scanvi_model_out", default = False)
+parser.add_argument("--scanvi_predict__on", default = "MajorCellType")
+parser.add_argument("--scanvi_predict__out", default = "MCT_scANVI")
 parser.add_argument("--scib", default = False)
+# example when debegging on command line
+# sys.argv = ['run_scvi.py','../../hs111.adata.solo.20240827.h5ad','/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_ref_bcs.20240910-01.csv.gz','hs111_mature_eye_20240910_500hvg_10e_10l','scviModel.hs111_mature_eye_20240910__500hvg_10e_10l','hs111_mature_eye_20240910_500hvg_10e_10l.h5ad','hs111_mature_eye_20240910_500hvg_10e_10l.obs.csv.gz','--query_csv','/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_query_bcs.20240910-01.csv.gz','--n_top_genes','500','--n_epochs','10','--n_latent','10','--input_type','barcode','--scanvi','scanviModel.hs111_mature_eye_20240910__500hvg_10e_10l','--scib','hs111_mature_eye_20240910_500hvg_10e_10l.scib.csv']
 args = parser.parse_args()
 
 adata = sc.read_h5ad(args.h5ad_input)
@@ -60,6 +64,12 @@ adata.var['protocadherin'] = adata.var['id_name'].str.startswith(('PCDH'))
 sc.pp.calculate_qc_metrics(adata, qc_vars=['ribo'], percent_top=None, log1p=False, inplace=True)
 sc.pp.calculate_qc_metrics(adata, qc_vars=['protocadherin'], percent_top=None, log1p=False, inplace=True)
 print('metrics calculated')
+
+# remove .digit from var_names
+vn = adata.var_names
+new_vn = vn.to_series().str.replace('\.\d+','',regex=True)
+adata.var['ensembl'] = new_vn
+adata.var_names = adata.var['ensembl']
 
 def subset_adata(input_csv, input_type):
     partition_samples = pd.read_csv(input_csv, header = None)[0]
@@ -81,10 +91,10 @@ def subset_adata(input_csv, input_type):
 
 def run_umap(adata_u):
     rsc.pp.neighbors(adata_u, use_rep=SCVI_LATENT_KEY)
-    rsc.tl.leiden(adata_u)
-    rsc.tl.leiden(adata_u, key_added = 'leiden2', resolution = 2)
-    rsc.tl.leiden(adata_u, key_added = 'leiden3', resolution = 3)
-    rsc.tl.leiden(adata_u, key_added = 'leiden5', resolution = 5)
+    sc.tl.leiden(adata_u)
+    sc.tl.leiden(adata_u, key_added = 'leiden2', resolution = 2)
+    sc.tl.leiden(adata_u, key_added = 'leiden3', resolution = 3)
+    sc.tl.leiden(adata_u, key_added = 'leiden5', resolution = 5)
     rsc.tl.umap(adata_u, min_dist = args.min_dist)
     
     umap = pd.DataFrame(adata_u.obsm['X_umap'])
@@ -167,7 +177,7 @@ else:
 
 adata_full = run_umap(adata_full)
 
-if args.scanvi_predict:
+if args.scanvi_model_out:
     print("\n\nRun scANVI CellType Prediction")
      
     print("\n\nRemove any NEW celltypes present in the query data but not the reference")
@@ -175,12 +185,15 @@ if args.scanvi_predict:
     scanvi_epochs = min(50, args.n_epochs)
     remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
     print(remove_ct)
-    adata_full.obs['MajorCellType'][adata_full.obs['MajorCellType'].isin(remove_ct)] = 'unlabelled'
-    adata_full.obs['MajorCellType'] = pd.Categorical(adata_full.obs['MajorCellType']).remove_unused_categories()    
+    print(args.scanvi_predict__on)
+    if 'unlabelled' not in adata_full.obs[args.scanvi_predict__on].values:
+        adata_full.obs[args.scanvi_predict__on] = adata_full.obs[args.scanvi_predict__on].cat.add_categories('unlabelled') 
+    adata_full.obs[args.scanvi_predict__on][adata_full.obs[args.scanvi_predict__on].isin(remove_ct)] = 'unlabelled'
+    adata_full.obs[args.scanvi_predict__on] = pd.Categorical(adata_full.obs[args.scanvi_predict__on]).remove_unused_categories()    
     scanvi_model = scvi.model.SCANVI.from_scvi_model(
         vae_ref,
         unlabeled_category="unlabelled",
-        labels_key='MajorCellType',
+        labels_key=args.scanvi_predict__on,
     )
     scanvi_model.train(max_epochs=scanvi_epochs)
     scanvi_query = scvi.model.SCANVI.load_query_data(adata_full, scanvi_model)
@@ -190,18 +203,18 @@ if args.scanvi_predict:
         check_val_every_n_epoch=10,
     )
     SCANVI_LATENT_KEY = "X_scANVI"
-    SCANVI_PREDICTION_KEY = "MCT_scANVI"
+    SCANVI_PREDICTION_KEY = args.scanvi_predict__out
     
 
     adata_full.obsm[SCANVI_LATENT_KEY] = scanvi_query.get_latent_representation(adata_full)
     adata_full.obs[SCANVI_PREDICTION_KEY] = scanvi_query.predict(adata_full)
 
-    sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['MCT_scANVI'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MCT_scANVI.png')
+    sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = [args.scanvi_predict__out],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MCT_scANVI.png')
 
-    scanvi_model.save(args.scanvi_predict, overwrite=True, save_anndata =True)
+    scanvi_model.save(args.scanvi_model_out, overwrite=True, save_anndata =True)
 
 sc.pp.log1p(adata_full)
-sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['MajorCellType'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MajorCellType.png')
+sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = [args.scanvi_predict__on],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_MajorCellType.png')
 sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['SubCellType'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_SubCellType.png')
 #sc.pl.scatter(adata_full, size = 5, basis='umap', color = 'ENSG00000163914.5', use_raw=False, show = False, save = args.plot_prefix + '_rho.png')
 sc.pl.scatter(adata_full, size = 5, basis = 'umap', color = ['CellType'],  palette = sc.pl.palettes.vega_20_scanpy, save = args.plot_prefix + '_CellType.png')
