@@ -9,7 +9,7 @@ parser.add_argument('adata_files_txt')
 parser.add_argument('sample_meta_tsv')
 parser.add_argument('cell_label_csv')
 parser.add_argument('output_h5ad_name')
-
+parser.add_argument('output_obs_name')
 args = parser.parse_args()
 
 
@@ -54,4 +54,6 @@ for i in adata.obs.columns:
         adata.obs = adata.obs.drop(i, axis = 1)
 
 adata.write_h5ad(args.output_h5ad_name)
+obs = pd.DataFrame(adata.obs)
+obs.to_csv(args.output_obs_name)
 # adata[~adata.obs.solo_doublet]
