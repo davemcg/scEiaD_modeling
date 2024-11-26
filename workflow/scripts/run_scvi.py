@@ -45,6 +45,7 @@ parser.add_argument("--gene_count_filter", default = 300, type = int)
 parser.add_argument("--scanvi_model_out", default = False)
 parser.add_argument("--scanvi_predict__on", default = "MajorCellType")
 parser.add_argument("--scanvi_predict__out", default = "MCT_scANVI")
+parser.add_argument("--scib_test", default = "MajorCellType")
 parser.add_argument("--scib", default = False)
 # example when debegging on command line
 # sys.argv = ['run_scvi.py','../../hs111.adata.solo.20240827.h5ad','/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_ref_bcs.20240910-01.csv.gz','hs111_mature_eye_20240910_500hvg_10e_10l','scviModel.hs111_mature_eye_20240910__500hvg_10e_10l','hs111_mature_eye_20240910_500hvg_10e_10l.h5ad','hs111_mature_eye_20240910_500hvg_10e_10l.obs.csv.gz','--query_csv','/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_query_bcs.20240910-01.csv.gz','--n_top_genes','500','--n_epochs','10','--n_latent','10','--input_type','barcode','--scanvi','scanviModel.hs111_mature_eye_20240910__500hvg_10e_10l','--scib','hs111_mature_eye_20240910_500hvg_10e_10l.scib.csv']
@@ -146,7 +147,7 @@ vae_ref
 SCVI_LATENT_KEY = "X_scVI"
 adata_ref.obsm[SCVI_LATENT_KEY] = vae_ref.get_latent_representation()
 
-adata_ref_u = run_umap(adata_ref)
+#adata_ref_u = run_umap(adata_ref)
 #adata_ref_u.obs.to_csv("temp.csv.gz")
 
 # optional projection of new (query) data onto the ref model
@@ -183,7 +184,7 @@ if args.scanvi_model_out:
     print("\n\nRemove any NEW celltypes present in the query data but not the reference")
     
     scanvi_epochs = min(50, args.n_epochs)
-    remove_ct = [mct for mct in set(adata_full.obs.MajorCellType) if mct not in set(adata_ref.obs.MajorCellType)]
+    remove_ct = [mct for mct in set(adata_full.obs[args.scanvi_predict__on]) if mct not in set(adata_ref.obs[args.scanvi_predict__on])]
     print(remove_ct)
     print(args.scanvi_predict__on)
     if 'unlabelled' not in adata_full.obs[args.scanvi_predict__on].values:
@@ -241,7 +242,7 @@ if args.scib:
     bm = Benchmarker(
         adata_full,
         batch_key=covariate,
-        label_key="MajorCellType",
+        label_key=args.scib_test,
         embedding_obsm_keys=["X_pca", "X_scVI"],
         n_jobs=2,
     )
