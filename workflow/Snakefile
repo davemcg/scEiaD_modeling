@@ -4,18 +4,32 @@ min_version("7.0")
 
 git_dir = config['git_dir'] 
 
+def query_bcs(query):
+	if query == '':
+		out = ''
+	else:
+		out = "--query_csv " + query + " "
+	return out
+
+def scib_out(scib_config):
+	if scib_config:
+		out = '--scib ' + config['prefix'] + wildcards.hvg + "hvg_" + wildcards.epochs + "e_" + wildcards.latent + "l.scib.csv"
+	else:
+		out = ''
+	return out
+
 rule all:
 	input:
 		expand(config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.difftesting.{against}.csv.gz',
 				hvg = config['hvg'],
 				epochs = config['epochs'],
 				latent = config['latent'],
-				against = ['leiden3','MajorCellType']),
+				against = config['pb_group']), #['leiden3','MajorCellType', 'leiden5']),
 		expand(config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.pseudoBulk.{against}.csv.gz',
 				hvg = config['hvg'],
 				epochs = config['epochs'],
 				latent = config['latent'],
-				against = ['leiden3','MajorCellType'])
+				against = config['pb_group']) #['leiden3','MajorCellType', 'leiden5'])
 
 rule run_scvi:
 	input:
@@ -25,6 +39,11 @@ rule run_scvi:
 		scib = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.scib.csv'
 	conda:
 		"rscvi"
+	params:
+		query = lambda wildcards: query_bcs(config['query_bcs']),
+		scanvi_on = config['scanvi_on'],
+		scanvi_out = config['scanvi_out'],
+		scib = lambda wildcards: scib_out(config['scib'])
 	shell:
 		"""
 		python {git_dir}/workflow/scripts/run_scvi.py \
@@ -34,15 +53,17 @@ rule run_scvi:
 			scviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
 			{config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.h5ad \
 			{config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.obs.csv.gz \
-			--query_csv {config[query_bcs]} \
+			{params.query} \
 			--n_top_genes {wildcards.hvg} \
 			--n_epochs {wildcards.epochs} \
 			--n_latent {wildcards.latent} \
 			--input_type barcode \
-			--scanvi scanviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
-			--scib {config[prefix]}{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l.scib.csv
+			--scanvi_model_out scanviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
+			--scanvi_predict__on {params.scanvi_on} \
+			--scanvi_predict__out {params.scanvi_out} \
+			{params.scib}	
 		"""
-
+	
 rule diff_testing:
 	input:
 		h5ad =  config['input_h5ad'],
