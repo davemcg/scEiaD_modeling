@@ -1,0 +1,12 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'hs111_mature_eye_20241121_stage6_'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_ref_bcs.20240911-01.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_query_bcs.20240911-01.csv.gz'
+epochs: ['200']
+latent: ['30']
+hvg: ['2000']
+input_h5ad: '../hs111_mature_eye_20241121_full_2000hvg_200e_30l_stage6.h5ad'
+scanvi_on: "hrCT_sus"
+scanvi_out: "hrCT_scANVI_step6"
+pb_group: ['leiden3','CT_scANVI_step6']
+scib: False

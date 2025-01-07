@@ -1,0 +1,8 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'hs111_mature_eye_20240911_'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_ref_bcs.20240911-01.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye_query_bcs.20240911-01.csv.gz'
+epochs: ['100','200']
+latent: ['30','50']
+hvg: ['1000','2000']
+input_h5ad: '../../hs111.adata.solo.20240827.h5ad'

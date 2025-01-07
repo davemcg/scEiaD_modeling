@@ -1,0 +1,8 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'hs111_mature_backeye_2024-08-28_cell-ref'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_backeye_ref_bcs__cell.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_backeye_query_bcs__cell-nac.csv.gz'
+epochs: ['100']
+latent: ['50']
+hvg: ['1000','2000']
+input_h5ad: '../../hs111.adata.solo.20240827.h5ad'

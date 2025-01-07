@@ -1,8 +1,8 @@
 git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
-prefix: 'hs111_mature_alleye_2024-07-30_'
-ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_alleye_ref_bcs.csv.gz'
-query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_alleye_query_bcs.csv.gz'
+prefix: 'hs111_mature_backeye_2024-08-26_'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_backeye_ref_bcs.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_backeye_query_bcs.csv.gz'
 epochs: ['10','50','100']
 latent: ['10','30','50']
 hvg: ['1000','2000', '5000']
-input_h5ad: 'hs111.adata.solo.2024_03_07.h5ad'
+input_h5ad: '../../hs111.adata.solo.20240826.h5ad'

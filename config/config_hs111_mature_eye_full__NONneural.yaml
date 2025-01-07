@@ -1,0 +1,11 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'hs111_mature_eye_20241001_full__NONneural'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage4_NONneural_ref_bcs.20241001-02.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage4_NONneural_query_bcs.20241001-02.csv.gz'
+epochs: ['100','200']
+latent: ['30','50']
+hvg: ['1000','2000','5000']
+input_h5ad: '../hs111_mature_eye_20240923_full_2000hvg_200e_30l__nonneural.h5ad'
+scanvi_on: "MCT_scANVI"
+scanvi_out: "MCT_scANVI_step4"
+pb_group: ['leiden3','MCT_scANVI_step4', 'leiden5']
