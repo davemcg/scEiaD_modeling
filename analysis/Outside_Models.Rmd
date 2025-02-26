@@ -1,0 +1,180 @@
+---
+title: "Model Performance"
+output:
+ html_notebook:
+  author: "David McGaughey"
+  date: "`r Sys.Date()`"
+  theme: flatly
+  toc: true
+  toc_float: true
+  code_folding: hide
+params:
+  obs: ''
+  label: ''
+  machine_label: ''
+---
+
+```{r arguments}
+
+obs = params$obs
+label = params$label
+machine_label = params$machine_label
+
+cat(obs)
+
+cat(label)
+
+cat(machine_label)
+```
+
+
+# Example scVI calls to build models
+```{base, eval = FALSE}
+
+source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
+mamba activate rapids_singlecell
+#################
+# [mh]rca models
+# using their h5ad objects
+#################
+cd /data/OGVFB_BG/scEiaD/2024_02_28/chen_rca/
+  python ~/git/scEiaD_modeling/workflow/scripts/barcode_puller.py mrca_all_70a012ab-bd22-4013-a04e-9a1a275cd8b4.h5ad mrca_all_ref.csv.gz --groupby cell_type --automax True
+sbatch --time=8:00:00 snakecall_mrca_all.sh
+
+python ~/git/scEiaD_modeling/workflow/scripts/barcode_puller.py hrca_v1_all_snRNA_2e910e62-7eaf-4c06-80cb-8918e3eea16e.h5ad  hrca_all_ref.csv.gz --groupby cell_type --automax True
+sbatch --time=24:00:00 snakecall_hrca_all.sh
+
+#####################
+# sanes complete ocular atlas
+#####################
+cd /data/OGVFB_BG/scEiaD/2024_02_28/sanes_complete_ocular_ref/
+  
+  python ~/git/scEiaD_modeling/workflow/scripts/barcode_puller.py SCP2310_broad.ensg.h5ad SCP2310_broad.ref.csv.gz --max 1000 --groupby type
+sbatch snakecall_SCP2310_broad.sh
+
+```
+
+
+```{r}
+library(tidyverse)
+source('analysis_scripts_2.R')
+obs <- pull_obs(obs, machine_label = machine_label, label = label)
+```
+
+# UMAP Plots
+```{r, fig.width=12, fig.height=12}
+obs$obs %>% 
+  #left_join(obs$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = .data[[label]]), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(.data[[label]]) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = .data[[label]], color = .data[[label]])) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey(), pals::kelly(), pals::alphabet()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none") +
+  ggtitle(label)
+
+obs$obs %>% 
+  #left_join(obs$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = .data[[machine_label]]), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(.data[[machine_label]]) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = .data[[machine_label]], color = .data[[machine_label]])) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey(), pals::kelly(), pals::alphabet()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none") +
+  ggtitle(machine_label)
+
+obs$obs %>% 
+  left_join(obs$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = capture_covariate), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mMCT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = mMCT), color = 'black') +
+  scale_color_manual(values = c(pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() +
+  ggtitle('capture_covariate')
+```
+
+# Overall Accuracy
+```{r}
+cat(obs$obs %>% 
+      #filter(suspect == 'No') %>% 
+      mutate(tf = case_when(.data[[label]] == .data[[machine_label]] ~ TRUE,
+                            TRUE ~ FALSE)) %>% 
+      mutate(accuracy = sum(tf)/length(tf)) %>% 
+      pull(accuracy) %>% 
+      unique())
+```
+
+# Confusion Matrix
+```{r, fig.width=16, fig.height=16}
+obs$obs %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  ggplot(aes(x=.data[[label]],y=.data[[machine_label]],fill=Ratio, label = round(Ratio, 2))) + 
+  geom_tile() + 
+  shadowtext::geom_shadowtext() + 
+  cowplot::theme_cowplot() +
+  scale_fill_viridis_c(begin = 0, end = 1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+# Label Level Accuracy
+```{r}
+most_common_mislabel <- obs$obs %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  arrange(.data[[label]], -Count) %>% 
+  slice_max(order_by = Count, n = 2) %>% 
+  filter(.data[[label]] != .data[[machine_label]])
+
+obs$obs %>% 
+  mutate(tf = case_when(.data[[label]] == .data[[machine_label]] ~ TRUE,
+                        TRUE ~ FALSE)) %>% 
+  group_by(.data[[label]]) %>% 
+  summarise(accuracy = sum(tf)/length(tf)) %>% 
+  arrange(.data[[label]]) %>% 
+  left_join(most_common_mislabel %>% 
+              select(any_of(label), 
+                     `most common mislabel` = any_of(machine_label),
+                     `mislabel count` = Count))
+```
+
+# Label Counts
+```{r}
+obs$obs %>% group_by(.data[[label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = 100* (Count / sum(Count)) %>% round(., digits = 4)) %>% 
+  DT::datatable()
+```
+
+```{r}
+obs$obs %>% group_by(.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = 100* (Count / sum(Count)) %>% round(., digits = 4)) %>% 
+  DT::datatable()
+```
+
+
+```{r, fig.height=12, fig.width=9}
+bind_rows(obs$obs %>% group_by(.data[[machine_label]]) %>% 
+            summarise(Count = n()) %>% 
+            mutate(CT = .data[[machine_label]],
+                   Type = 'machine label'),
+          obs$obs %>% group_by(.data[[label]]) %>% 
+            summarise(Count = n()) %>% 
+            mutate(CT = .data[[label]],
+                   Type = 'label')) %>% 
+  ggplot(aes(y=CT,x=Count,fill = Type, label = Count)) + 
+  geom_text(aes(x=Count + 15000), position = position_dodge2(width = 0.8)) +
+  geom_bar(stat='identity', position = position_dodge2(width = 0.8)) +
+  cowplot::theme_cowplot() +
+  coord_cartesian(clip = "off") +
+  scale_fill_brewer()
+```

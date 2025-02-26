@@ -1,0 +1,565 @@
+---
+title: "Human Mature Eye Creation"
+output:
+ html_notebook:
+  author: "David McGaughey"
+  date: "`r Sys.Date()`"
+  theme: flatly
+  toc: true
+  toc_float: true
+  code_folding: hide
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,  warning = FALSE,
+  collapse = TRUE,
+  fig.width = 12, fig.height = 8,
+  comment = "#>",
+  dpi=300
+)
+```
+
+# Stage 1
+
+Evaluate the cell type labels (the "truth" for scANVI / scVI). 
+
+```{bash, exec = FALSE}
+# edit and run this locally (laptop / etc)
+~/git/scEiaD_quant/workflow/scripts/hand_change_ct_labels.R
+# rsync the new cell label file to biowulf
+rsync -Prav scEiaD_cell_labels_2024_08_27.csv.gz h2:/home/mcgaugheyd/git/scEiaD_quant/
+# create the organism level h5ad file from the individual scEiaD_quant made h5ad files
+# now on biowulf
+# sinteractive --mem=128G
+mamba deactivate; mamba activate rscvi
+python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py hs111.fin.txt /home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz /home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_27.csv.gz hs111.adata.solo.20240827.h5ad hs111.adata.solo.20240827.obs.csv.gz
+# back to local computer to copy the cell metadata
+cd ~/git/scEiaD_modeling
+rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/hs111.adata.solo.20240827.obs.csv.gz .
+```
+
+# Stage 2
+
+- pull data from one species
+- filter to age group (dev or mature)
+- select random (up to 2k) cell type per study and output those barcodes
+- output barcodes for the non-selected cells
+- run scvi on biowulf
+
+
+```{r, exec = FALSE}
+library(tidyverse)
+sample_meta <- data.table::fread('~/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz')
+cell_meta <- data.table::fread('~/data/scEiaD_modeling/hs111.adata.solo.20240827.obs.csv.gz')[,-1] %>% 
+  relocate(barcode) %>% 
+  filter(solo_doublet == "FALSE")
+
+srp362101_sra <- read_csv('~/git/scEiaD_quant/data/SRP362101_SraRunTable.txt')
+hs111_eye <- cell_meta %>% 
+  filter(study_accession != 'SRP362101') %>% 
+  mutate(stage = case_when(as.numeric(age) <= 10 ~ 'Developing', 
+                           TRUE ~ 'Mature'), 
+         side = case_when(tissue == 'Brain Choroid Plexus' ~ 'Brain Choroid Plexus',
+                          grepl("Choroid|RPE", tissue) ~ 'BackEye',
+                          grepl("Retina", tissue) ~ 'BackEye',
+                          grepl("Outf", tissue) ~ 'FrontEye',
+                          grepl("Iris", tissue) ~ 'FrontEye',
+                          grepl("Sclera", tissue) ~ 'FrontEye',
+                          grepl("Cornea", tissue) ~ 'FrontEye',
+                          grepl("Macula", tissue) ~ 'BackEye',
+                          grepl("Trabecul", tissue) ~ 'FrontEye',
+                          grepl("Optic", tissue) ~ 'BackEye',
+                          TRUE ~ tissue)) %>% 
+  filter(organ == 'Eye', # 2024 09 03 oops
+    organism == 'Homo sapiens',
+         !grepl("^#", sample_accession),
+         source == 'Tissue',
+         #tissue %in% c("Macula", "Retina"),
+         #side %in% c("FrontEye", "BackEye"),
+         #side %in% c("BackEye"),# 2024 08 31
+         #capture_type == 'cell', # 2024 08 28
+         #kb_tech %in% c("10xv1","10xv2","10xv3"), # 2024 08 28
+         stage == 'Mature') %>% 
+  filter(study_accession != 'SRP447468') %>%  # 2024 08 29 remove (for now????) this optic nerve and adjacent study from sanes as it clusters (hclust) apart from everything else
+  filter(study_accession != 'SRP364915') #2024 09 10 also has the same behavior....
+# do not use studies with less than 1000 cells as ref
+
+# 2024 09 10 realized I somehow had bazillions of cells from some other spurious????? samples in this study
+hs111_eye <- bind_rows(hs111_eye,
+                       cell_meta %>% filter(sample_accession %in% srp362101_sra$Experiment)) 
+
+hs111_study <- hs111_eye %>% 
+  group_by(study_accession) %>% summarise(Count = n()) %>% filter(Count>1000)
+hs111_mct <- hs111_eye %>% 
+  group_by(MajorCellType) %>% summarise(Count = n()) %>% filter(Count >= 10)
+set.seed(09813)
+hs111_eye$MajorCellType %>% table()
+hs111_ref_bcs <- hs111_eye %>% 
+  filter(study_accession %in% hs111_study$study_accession,
+         MajorCellType %in% hs111_mct$MajorCellType) %>%  # 2024 09 11 remove cell type if there are less than 10 
+  filter(MajorCellType != '',   # 2024 04 16 big change - only use labelled cells in ref
+         MajorCellType != 'rpc') %>%  # 2024 08 30 23 cells in 83 year old labelled as rpc??? 
+  # 2024 07 30 fixed mistake in filtering that still let them in
+  group_by(study_accession, MajorCellType) %>%  # 2024 07 30 big change - sample on study *and* majorcelltype
+  sample_n(1000, replace = TRUE) %>%  
+  unique()
+
+hs111_query_bcs <- hs111_eye %>% 
+  filter(!barcode %in% hs111_ref_bcs$barcode) 
+
+hs111_ref_bcs$barcode %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye_ref_bcs.20240911-01.csv.gz'))
+hs111_query_bcs$barcode %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye_query_bcs.20240911-01.csv.gz'))
+
+```
+
+## run scVI
+
+now go to biowulf2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye
+
+```{bash, exec = FALSE}
+# will take ~2-4 hours (depending on hpc usage)
+mamba deactivate; mamba activate; bash ~/git/scEiaD_modeling/Snakemake.wrapper.sh ~/git/scEiaD_modeling/workflow/Snakefile ~/git/scEiaD_modeling/config/config_hs111_mature_eye.yaml ~/git/scEiaD_modeling/config/cluster.json
+```
+
+## rsync output from biowulf2 to local computer
+```{bash, exec = FALSE}
+cd /Users/mcgaugheyd/data/scEiaD_modeling/hs111_mature_eye
+rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye/*20240903*scib* .
+rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye/*20240903*obs* .
+rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye/*20240903*.leiden3.csv.gz .
+rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye/*20240903*hvg.csv.gz .
+```
+
+# Stage 3
+## scib scoring
+```{r}
+scib_files <- list.files(path = '~/data/scEiaD_modeling/hs111_mature_eye/', full.names = TRUE) %>% grep('scib',.,value = TRUE)
+scib_scores <- purrr::map(scib_files, read.csv)
+names(scib_scores) <- scib_files %>% str_extract("_\\d+hvg.*l") %>% gsub("^_","",.)
+for (i in names(scib_scores)){
+  scib_scores[[i]]$Delta <- as.numeric(scib_scores[[i]][2,'Total']) - as.numeric(scib_scores[[i]][1,'Total'])
+}
+bind_rows(scib_scores, .id = 'Params') %>% 
+  filter(Embedding == 'X_scVI') %>% 
+  mutate(Params= gsub("hvg|e|l","",Params)) %>% 
+  separate(Params, into = c("HVG","Epochs", "Latent Dimensions"), sep = "_") %>% 
+  mutate_all(as.numeric) %>% 
+  mutate(Embedding = 'X_scVI') %>% 
+  arrange(-Total)
+```
+
+
+
+## Assess Output
+```{r}
+obs <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye/hs111_mature_eye_20240911_1000hvg_200e_30l.obs.csv.gz' )[,-1] %>% relocate(barcode) %>% 
+   mutate(side = case_when(tissue == 'Brain Choroid Plexus' ~ 'Brain Choroid Plexus',
+                          grepl("Choroid|RPE", tissue) ~ 'BackEye',
+                          grepl("Retina", tissue) ~ 'BackEye',
+                          grepl("Outf", tissue) ~ 'FrontEye',
+                          grepl("Iris", tissue) ~ 'FrontEye',
+                          grepl("Sclera", tissue) ~ 'FrontEye',
+                          grepl("Cornea", tissue) ~ 'FrontEye',
+                          grepl("Macula", tissue) ~ 'BackEye',
+                          grepl("Trabecul", tissue) ~ 'FrontEye',
+                          grepl("Optic", tissue) ~ 'BackEye',
+                          TRUE ~ tissue)) 
+
+
+obs_machine_labels <- obs %>% group_by(leiden3, MCT_scANVI) %>% 
+  summarise(Count = n()) %>% mutate(Ratio = Count/sum(Count)) %>% 
+  filter(Ratio > 0.10) %>% 
+  arrange(-Ratio) %>% 
+  summarise(mMCT = paste0(MCT_scANVI, collapse = ', '),
+            mCount = sum(Count),
+            mMCT_Ratio = paste0(round(Ratio,2), collapse =', '),
+            mCT = gsub(", .*","",mMCT)) 
+
+obs_author_labels <- obs %>% group_by(leiden3, MajorCellType) %>% 
+  filter(MajorCellType != 'unlabelled') %>% 
+  summarise(Count = n()) %>% mutate(Ratio = Count/sum(Count)) %>% 
+  filter(Ratio > 0.10) %>% 
+  arrange(-Ratio) %>% 
+  summarise(aMCT = paste0(MajorCellType, collapse = ', '),
+            aCount = sum(Count),
+            aMCT_Ratio = paste0(round(Ratio,2), collapse =', '),
+            aCT = gsub(", .*","",aMCT)) 
+
+obs_leiden3_ct <- obs %>% group_by(leiden3) %>% 
+  summarise(TotalCount = n(), 
+            solo_score = mean(solo_score) %>% round(.,2), 
+            background_fraction = mean(background_fraction) %>% round(.,2), 
+            cell_probability = mean(cell_probability) %>% round(.,2))
+
+
+obs_labels <- obs_machine_labels %>% 
+  left_join(obs_leiden3_ct, by = c("leiden3")) %>% 
+  left_join(obs_author_labels, by = 'leiden3') 
+
+obs_study <- obs %>% group_by(leiden3, study_accession) %>% 
+  summarise(studyCount = n()) %>% 
+  filter(studyCount > 10) %>% 
+  summarise(studyCount = n(), studies = paste0(study_accession, collapse = ', '))
+
+obs_tissue <- obs %>% group_by(leiden3, tissue) %>% 
+  summarise(tissueCount = n()) %>% 
+  summarise(tissueCount = n(), tissues = paste0(unique(tissue), collapse = ', '))
+
+obs_tech<- obs %>% group_by(leiden3, workflow) %>% 
+  summarise(techCount = n()) %>% 
+  mutate(techRatio = techCount/sum(techCount)) %>% 
+  filter(workflow == 'standard') %>% 
+  select(-techCount, -workflow) 
+
+
+obs_labels <- obs_labels %>% 
+  left_join(obs_study, by = 'leiden3') %>% 
+  left_join(obs_tissue, by = 'leiden3') %>% 
+  left_join(obs_tech, by = 'leiden3')
+
+obs$study_accession %>% table()
+obs_study$studyCount %>% mean()
+obs_study %>% filter(studyCount == 1) %>% nrow()
+obs_study %>% filter(studyCount == 1) %>% group_by(studies) %>% summarise(Count = n())
+```
+
+```{r diff}
+# pull in diff
+diff_testing <- data.table::fread("~/data/scEiaD_modeling/hs111_mature_eye/hs111_mature_eye_20240911_1000hvg_200e_30l.difftesting.leiden3.csv.gz") %>% mutate(ENSEMBL = gsub("\\.\\d+","",names))
+conv_table <- AnnotationDbi::select(org.Hs.eg.db::org.Hs.eg.db, 
+                                    keys=gsub('\\.\\d+','',unique(diff_testing$names)),
+                                    columns=c("ENSEMBL","SYMBOL", "MAP","GENENAME", "ENTREZID"), keytype="ENSEMBL")
+
+swarooks_markers <- read_csv('../data/MBrooks313_scRNAseq_Retina_Cell_type_MB_v2_positive.csv')
+
+
+top_diff <- diff_testing %>% 
+  group_by(base) %>% 
+  slice_max(n = 7, order_by = scores) %>% 
+  left_join(conv_table, by =c( "ENSEMBL")) %>% 
+  ungroup() %>% 
+  mutate(leiden3 = base) %>% 
+  group_by(leiden3) %>% 
+  summarise(diff_genes = paste0(SYMBOL, collapse = ', '))
+
+obs_labels <- obs_labels %>% 
+  left_join(top_diff)
+```
+
+
+
+
+## Cluster Overview
+
+### Ratio (percentage) of labelled cell types for each leiden3 cluster
+```{r}
+obs_labels %>% 
+  arrange(aCT) %>% 
+  mutate(leiden3 = as.factor(leiden3)) %>% 
+  DT::datatable(filter = 'top')
+```
+
+
+
+### background fraction against solo (doublet) score
+Labelled points are clusters with more than one machine CT (above 0.1)
+```{r}
+obs_labels %>% 
+  mutate(mMCT_unique_count = str_count(mMCT, ',') + 1) %>%  
+  ggplot(aes(x=solo_score,y=background_fraction)) + 
+  geom_point(aes(color = as.factor(mMCT_unique_count), size = log1p(TotalCount))) + 
+  ggrepel::geom_label_repel(data = . %>% filter(mMCT_unique_count > 1), aes(label = leiden3), max.overlaps = Inf)
+```
+
+
+### Discrepancies
+Between author cell type and machine (scANVI) cell type
+```{r}
+obs_labels %>% filter(aCT != mCT) %>% data.frame
+```
+
+Multiple mMCT above 10% of the total in a cluster
+```{r}
+obs_labels %>% filter(grepl(",",mMCT)) %>% select(-solo_score, -background_fraction, -cell_probability) %>% data.frame %>% arrange(-TotalCount)
+```
+
+## UMAP Plots
+```{r, fig.width=16, fig.height=16}
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = mCT), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mCT) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = mCT, color = mCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = mMCT), pointsize = 4, alpha = 0.5) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none") + 
+  facet_wrap(~study_accession)
+
+
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = capture_type)) +
+  facet_wrap(~mCT) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot()
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(grepl("bipolar", mMCT)) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = study_accession), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  ggtitle("bipolar") +
+  cowplot::theme_cowplot() 
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(mMCT == 'rpe') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = study_accession), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mCT) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = mCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() 
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(mMCT == 'amacrine') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = study_accession), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mCT) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = mCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot()+
+  ggtitle("amacrine")
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(mMCT == 'amacrine') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = as.factor(leiden3)), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mCT) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = mCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() 
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(mCT == 'mueller') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = as.factor(leiden3)), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + ggtitle("mueller")
+
+
+# obs %>% 
+#   left_join(obs_labels, by = 'leiden3') %>% filter(mCT == 'epithelial') %>% 
+#     mutate(tissue = case_when(grepl("Choroid|RPE", tissue) ~ "RPE/Choroid",
+#                             grepl("Cornea", tissue) ~ "Cornea",
+#                             grepl("Iris", tissue) ~ "Iris",
+#                             grepl("Macula", tissue) ~ "Retina",
+#                             grepl("Optic Nerve", tissue) ~ "Optic Nerve",
+#                             TRUE ~ tissue)) %>% 
+#   ggplot(aes(x=umap1,y=umap2)) +
+#   scattermore::geom_scattermore(aes(color = tissue), pointsize = 0.8, alpha = 0.8) +
+#   ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+#                               summarise(umap1 = mean(umap1),
+#                                         umap2 = mean(umap2)),
+#                             aes(label = leiden3)) +
+#   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+#   cowplot::theme_cowplot() + ggtitle("epithelial") + facet_wrap(~tissue)
+
+
+
+obs %>% 
+  left_join(obs_labels, by = 'leiden3') %>% filter(mCT == 'rod') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = as.factor(leiden3)), pointsize = 0.8, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = mean(umap1),
+                                        umap2 = mean(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + ggtitle("rod")
+```
+
+## hclust
+Take pseudobulk values (at the cluster level) and hierarchically cluster them to ensure 
+there aren't any issues in either the overall structure (e.g. rod and cones are intersperse)d
+and/or to identify any potential mislabeled clusters
+
+```{r, fig.width = 18, fig.height = 10}
+library(tidyverse)
+pb <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye/hs111_mature_eye_20240911_1000hvg_200e_30l.pseudoBulk.leiden3.csv.gz')
+hvg <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye/hvg1000.csv.gz')[-1,]
+rnames <- pb$V1
+clust <- str_extract(rnames, '\\d+') %>% as.integer()
+pb <- pb[,-1] %>% as.matrix()
+row.names(pb) <- as.character(clust)
+pb <- pb[as.character(obs_labels$leiden3),]
+
+# library(SingleCellExperiment)
+# library(scater)
+# library(scran)
+# do_hvg <- function(cts){
+#   sce <- SingleCellExperiment(list(counts = cts))
+#   sce <- logNormCounts(sce)
+#   hvg <- modelGeneVar(sce)
+#   # Visualizing the fit:
+#   hvg$var <- metadata(hvg)$var
+#   return(hvg)
+# }
+# 
+# nhvg  <- do_hvg(t(pb))
+
+pb_norm <- metamoRph::normalize_data(t(pb), sample_scale = 'cpm') %>% t() 
+out <- pb_norm %>% t() %>% as_tibble(rownames = 'ENSEMBL') %>% mutate(ENSEMBL = gsub("\\.\\d+","",ENSEMBL)) %>% left_join(conv_table %>% select(ENSEMBL, SYMBOL), by = 'ENSEMBL') %>% relocate(SYMBOL) %>% mutate(SYMBOL = case_when(is.na(SYMBOL) ~ ENSEMBL, TRUE ~ SYMBOL)) %>% select(-ENSEMBL) %>% group_by(SYMBOL) %>% summarise_if(is.numeric, sum)
+# remove cell cycle genes
+conv_table <- AnnotationDbi::select(org.Hs.eg.db::org.Hs.eg.db, 
+                                    keys=gsub('\\.\\d+','',unique(colnames(pb_norm))),
+                                    columns=c("ENSEMBL","SYMBOL", "MAP","GENENAME", "ENTREZID"), keytype="ENSEMBL")
+
+cc_genes <- hvg %>% mutate(ENSEMBL = gsub("\\.\\d+","",V2)) %>% 
+  left_join(conv_table, by = "ENSEMBL") %>% 
+  mutate(cc_genes = case_when(SYMBOL %in% (Seurat::cc.genes.updated.2019 %>% unlist()) ~ TRUE)) %>% 
+  filter(cc_genes) %>% pull(V2)
+ribo_genes <- hvg %>% mutate(ENSEMBL = gsub("\\.\\d+","",V2)) %>% 
+  left_join(conv_table, by = "ENSEMBL") %>% filter(grepl("^RPL|^RPS|^MT",SYMBOL)) %>% 
+  pull(SYMBOL)
+
+pb_norm <- pb_norm[,hvg$V2]
+#pb_norm <- pb_norm[,hvg$V2[!hvg$V2 %in% c(cc_genes,ribo_genes)]]
+# https://stats.stackexchange.com/questions/31565/compute-a-cosine-dissimilarity-matrix-in-r
+sim <- pb_norm / sqrt(rowSums(pb_norm * pb_norm))
+sim <- sim %*% t(sim)
+D_sim <- as.dist(1 - sim)
+
+hclust_sim <- hclust(D_sim, method = 'average')
+
+hclust_sim$labels <- obs_labels %>% pull(leiden3)
+
+library(ggtree)
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(obs_labels, by = c("label" = "leiden3")) %>% 
+  mutate(techRatio = round(techRatio, digits = ))
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, mMCT, studyCount, TotalCount, techRatio, sep = ' - '), color = mCT)) + 
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  guides(color="none")
+
+
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(obs_labels %>% mutate(studies = case_when(studyCount ==1 ~ studies,
+                                                                         TRUE ~ "multiple")), by = c("label" = "leiden3")) %>% 
+  mutate(techRatio = round(techRatio, digits = ))
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, mMCT, studies, sep = ' - '), color = mCT)) + 
+  geom_tippoint(aes(shape = studies), size= 3) +
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  guides(color="none")
+obs_study %>% filter(studyCount == 1) %>% nrow()
+```
+
+# Matthew Brooks / Anand Swaroop Diff Markers (retina)
+```{r}
+x <- diff_testing %>% left_join(conv_table, by =c( "ENSEMBL")) %>% filter(SYMBOL %in% toupper(swarooks_markers$gene))
+x %>% left_join(swarooks_markers %>% mutate(gene = toupper(gene)), by = c("SYMBOL" = "gene")) %>% group_by(base, cell_type) %>% summarise(score = mean(logfoldchanges)) %>% pivot_wider(names_from = cell_type, values_from = score) %>% 
+  dplyr::rename(leiden3 = base) %>% left_join(obs_labels %>% select(leiden3, mMCT)) %>% DT::datatable()
+```
+
+```{r, fig.width=10}
+mct <- obs %>% group_by(MajorCellType, study_accession, tissue) %>% 
+  filter(MajorCellType != '', MajorCellType != 'unlabelled', MajorCellType != 'rpc') %>% 
+  summarize(Count = n()) %>% 
+  rename(CT = MajorCellType) %>% 
+  mutate(Class = 'Author Major Cell Type')
+
+mMCT <- obs %>% group_by(MCT_scANVI, study_accession, tissue) %>% 
+  filter(MCT_scANVI != '', MCT_scANVI != 'unlabelled') %>% 
+  summarize(Count = n()) %>% 
+  rename(CT = MCT_scANVI) %>% 
+  mutate(Class = 'ML Major Cell Type')
+
+bind_rows(mct,
+          mMCT) %>% 
+  ggplot(aes(y=CT,x=Count,fill=study_accession)) +
+  geom_bar(stat='identity') +
+  facet_grid(~Class) +
+  cowplot::theme_cowplot() +
+  scale_fill_manual(values = pals::kelly()[2:20])
+
+```
+
+
+# Edits
+
+Principles:
+
+1. clusters are (mostly?) a single cell type
+- cases where there are a limited (?) number of cells and other evidence (diff genes) suggests mixing, then remove the cluster as a doublet
+2. Use machine learnt CT, hclust, and (when confused) diff genes in a cluster to assign cell type
+
+```{r}
+obs_labels_e <- obs_labels %>% 
+  mutate(MCT_edit = 
+           case_when(leiden3 %in% c(116,69) ~ 'doublet',
+                     leiden3 %in% c(130, 104) ~ 'hclust wrong',
+                     leiden3 == 100 ~ 'epithelial',
+                     
+                     leiden3 %in% c(10,
+                                    84,
+                                    2,
+                                    7,
+                                    31,
+                                    81,
+                                    13,
+                                    45,
+                                    62,
+                                    49,
+                                    63,
+                                    21,
+                                    23) ~ mMCT,
+                     TRUE ~ mCT)
+  )
+```
+
+```{r, fig.height=8, fig.width=7}
+obs %>% 
+  left_join(obs_labels_e, by = 'leiden3') %>% 
+  filter(MCT_edit != 'doublet') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = MCT_edit), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(MCT_edit) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = MCT_edit, color = MCT_edit)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+```
+
+```{r}
+sessionInfo()
+```

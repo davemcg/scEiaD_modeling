@@ -1,0 +1,656 @@
+---
+title: "Human Mature Eye, Neural Assessment"
+output:
+ html_notebook:
+  author: "David McGaughey"
+  date: "`r Sys.Date()`"
+  theme: flatly
+  toc: true
+  toc_float: true
+  code_folding: show
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,  warning = FALSE,
+  collapse = TRUE,
+  fig.width = 12, fig.height = 8,
+  comment = "#>",
+  dpi=300
+)
+```
+
+# Stage 4
+
+# 2024 11 12
+Added suspect calls into the output
+
+# 2024 11 22
+Added forgotten bash/Biowulf2 run command to update the input h5ad with new CT calls
+
+## Biowulf2
+```{bash, eval = FALSE}
+# first update the reference adata with the corrected calls from stage3
+cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full
+python ~/git/scEiaD_modeling/workflow/scripts/append_obs.py ../../hs111.adata.solo.20240827.h5ad hs111_mature_eye_20240911_withSUSPECTstudies2000hvg_200e_30l.obs.csv.gz hs111_mature_eye_20240923_full_2000hvg_200e_30l.h5ad --neural MCT_scANVI
+
+cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/neural_cells
+mamba deactivate; mamba activate; bash ~/git/scEiaD_modeling/Snakemake.wrapper.sh ~/git/scEiaD_modeling/workflow/Snakefile ~/git/scEiaD_modeling/config/config_hs111_mature_eye_full__neural.yaml ~/git/scEiaD_modeling/config/cluster.json
+```
+
+## Assess Output
+```{r}
+library(tidyverse)
+source('analysis_scripts.R')
+obs_neural <- pull_obs('~/data/scEiaD_modeling/hs111_mature_eye_neural/hs111_mature_eye_20240924_full__neural5000hvg_200e_50l.obs.csv.gz', machine_label = 'MCT_scANVI_step4', drop_col = FALSE)
+diff_neural <- pull_diff("~/data/scEiaD_modeling/hs111_mature_eye_neural/hs111_mature_eye_20240924_full__neural5000hvg_200e_50l.difftesting.leiden3.csv.gz")
+```
+### Ratio (percentage) of labelled cell types for each leiden3 cluster
+```{r}
+obs_neural$labels %>% 
+  arrange(mCT) %>% 
+  mutate(leiden3 = as.factor(leiden3)) %>% 
+  DT::datatable(filter = 'top')
+```
+
+### Mixed clusters
+```{r}
+obs_neural$labels %>% 
+  filter(grepl(",", mMCT)) %>% 
+  arrange(mCT) %>% 
+  mutate(leiden3 = as.factor(leiden3)) %>% 
+  DT::datatable(filter = 'top')
+```
+
+## UMAP Plots
+```{r, fig.width=12, fig.height=12}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = MCT_scANVI_step4), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(MCT_scANVI_step4) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = MCT_scANVI_step4, color = MCT_scANVI_step4)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = MCT_scANVI), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+
+
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = studyRatio), pointsize = 0.7) +
+  scale_color_viridis_c() +
+  cowplot::theme_cowplot() 
+
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = mMCT), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(mMCT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = mMCT, color = mMCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+
+
+```
+
+## hclust
+Take pseudobulk values (at the cluster level) and hierarchically cluster them to ensure 
+there aren't any issues in either the overall structure (e.g. rod and cones are intersperse)d
+and/or to identify any potential mislabeled clusters
+
+```{r, fig.width = 18, fig.height = 10}
+pb <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye_neural/hs111_mature_eye_20240924_full__neural5000hvg_200e_50l.pseudoBulk.leiden3.csv.gz')
+colnames(pb) <- gsub("\\.\\d+","",colnames(pb))
+hvg <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye_neural/hvg5000.csv.gz')[-1,]
+rnames <- pb$V1
+clust <- str_extract(rnames, '\\d+') %>% as.integer()
+pb <- pb[,-1] %>% as.matrix()
+row.names(pb) <- as.character(clust)
+pb <- pb[as.character(obs_neural$labels$leiden3),]
+
+pb_norm <- metamoRph::normalize_data(t(pb), sample_scale = 'cpm') %>% t() 
+
+# remove cell cycle genes
+conv_table <- AnnotationDbi::select(org.Hs.eg.db::org.Hs.eg.db, 
+                                    keys=gsub('\\.\\d+','',unique(colnames(pb_norm))),
+                                    columns=c("ENSEMBL","SYMBOL", "MAP","GENENAME", "ENTREZID"), keytype="ENSEMBL")
+
+cc_genes <- hvg %>% mutate(ENSEMBL = gsub("\\.\\d+","",V2)) %>% 
+  left_join(conv_table, by = "ENSEMBL") %>% 
+  mutate(cc_genes = case_when(SYMBOL %in% (Seurat::cc.genes.updated.2019 %>% unlist()) ~ TRUE)) %>% 
+  filter(cc_genes) %>% pull(V2)
+ribo_genes <- hvg %>% mutate(ENSEMBL = gsub("\\.\\d+","",V2)) %>% 
+  left_join(conv_table, by = "ENSEMBL") %>% filter(grepl("^RPL|^RPS|^MT",SYMBOL)) %>% 
+  pull(SYMBOL)
+
+pb_norm <- pb_norm[,hvg$V2]
+#pb_norm <- pb_norm[,hvg$V2[!hvg$V2 %in% c(cc_genes,ribo_genes)]]
+# https://stats.stackexchange.com/questions/31565/compute-a-cosine-dissimilarity-matrix-in-r
+sim <- pb_norm / sqrt(rowSums(pb_norm * pb_norm))
+sim <- sim %*% t(sim)
+D_sim <- as.dist(1 - sim)
+
+hclust_sim <- hclust(D_sim, method = 'average')
+
+hclust_sim$labels <- obs_neural$labels %>% pull(leiden3)
+
+library(ggtree)
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(obs_neural$labels, by = c("label" = "leiden3")) %>% 
+  mutate(techRatio = round(techRatio, digits = ))
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, mMCT, studyCount, TotalCount, techRatio, sep = ' - '), color = mCT)) + 
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  guides(color="none")
+
+
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(obs_neural$labels %>% mutate(studies = case_when(studyCount ==1 ~ studies,
+                                                                                TRUE ~ "multiple")), by = c("label" = "leiden3")) 
+
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, mMCT, studies, sep = ' - '), color = mCT)) + 
+  geom_tippoint(aes(shape = studies), size= 3) +
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  guides(color="none")
+
+
+
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(obs_neural$labels %>% mutate(studies = case_when(studyRatio ==1 ~ studiesRatio,
+                                                                                TRUE ~ "multiple")), by = c("label" = "leiden3")) 
+
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, mMCT, studies, sep = ' - '), color = mCT)) + 
+  geom_tippoint(aes(shape = studies), size= 3) +
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  guides(color="none")
+
+
+```
+
+## suspicious clusters
+
+reasons:
+
+- 1. study specific clusters in "wrong" (not with like) parts of the tree
+- 2. mixed cell types
+
+```{r}
+sus_neural <- #c(71,93,126,112,144,39,21,85,135,7,74,36,124)
+  c(
+    # reason 1
+    c(99, 97, 38, 50,40, 98, 94),
+    # reason 2
+    c(85, 95, 91, 52, 77)
+  )
+# to provide an additional layer of resolution to the cell type
+hr_neural <- list()
+```
+
+
+### UMAP Plots
+```{r, fig.width=16, fig.height=16}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = MCT_scANVI_step4), pointsize = 0.8, alpha = 0.5) +
+  scattermore::geom_scattermore(data = obs_neural$obs %>% 
+                                  left_join(obs_neural$labels, by = 'leiden3') %>% 
+                                  filter(leiden3 %in% sus_neural),
+                                color = 'red', pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              filter(leiden3 %in% sus_neural) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot()
+
+
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = mCT), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              filter(leiden3 %in% sus_neural) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+# Call CT
+
+```{r}
+hr_neural <- list()
+```
+
+## photoreceptor
+
+**Removing two more clusters with no ARR3 / RHO signal (and suspicious hclust) above**
+
+https://www.nature.com/articles/s41598-020-66092-9
+```{r}
+
+tib <- diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT %in% c('rod','cone'), !base %in% sus_neural) %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('ARR3','OPN1LW','OPN1SW','RHO', 'OPN1MW', 'RCVRN',"CRX","PROM1")) %>% 
+  select(SYMBOL, base, logfoldchanges) %>% 
+  pivot_wider(values_from = logfoldchanges, names_from = base)
+
+mat <- tib %>% select(-1) %>% as.matrix()
+row.names(mat) <- tib %>% pull(1)
+
+col_fun = circlize::colorRamp2(c(-5, 0, 5), c("blue", "white", "red"))
+ComplexHeatmap::Heatmap(mat, col=col_fun)
+
+sus_neural <- c(sus_neural,
+                           c(86,29))
+
+hr_neural$`cone (s)` <- c(87)
+hr_neural$`cone (ml)` <- c(72,74,20,90,81)
+```
+
+```{r echo=FALSE, fig.cap="pr", out.width = '20%'}
+knitr::include_graphics("images/pr.png")
+# https://www.nature.com/articles/s41598-020-66092-9
+```
+
+
+```{r, fig.width=9, fig.height=9}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural,
+         mCT %in% c("rod", "cone")) %>% 
+  left_join(hr_neural %>% enframe(name = 'Cell Type', value = 'leiden3') %>% unnest(leiden3),
+             by = 'leiden3') %>% 
+  mutate(`Cell Type` = case_when(is.na(`Cell Type`) ~ mCT,
+                                 TRUE ~ `Cell Type`)) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = `Cell Type`), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = 
+                       c(pals::alphabet2(), pals::glasbey(), pals::alphabet(), pals::brewer.set1(n=12)) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+
+## bipolar
+
+```{r echo=FALSE, fig.cap="bipolar", out.width = '20%'}
+knitr::include_graphics("images/bipolar.png")
+# https://www.nature.com/articles/s41598-020-66092-9
+```
+
+
+
+```{r}
+tib <- diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT %in% c('bipolar','rod bipolar'), !base %in% sus_neural) %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('PRKCA','GRM6','GRIK1','NIF3L1',
+                       'LINC00470','DOK5','NELL2','STX18',
+                       'ODF2L','FAM19A4','MEIS2','CALB1', 'FUT4',
+                       'SCG2','LRPPRC','FEZF1')) %>% 
+  select(SYMBOL, base, logfoldchanges) %>% 
+  pivot_wider(values_from = logfoldchanges, names_from = base)
+
+mat <- tib %>% select(-1) %>% as.matrix()
+row.names(mat) <- tib %>% pull(1)
+
+col_fun = circlize::colorRamp2(c(-5, 0, 5), c("blue", "white", "red"))
+ComplexHeatmap::Heatmap(mat, col=col_fun)
+
+hr_neural$`bipolar (rod)` <- c(12,78,32)
+hr_neural$`bipolar (off)` <- c(11,28,33,36,46,17)
+hr_neural$`bipolar (on)` <- c(68,55,6,82,27,30,39)
+```
+
+```{r, fig.width=9, fig.height=9}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural,
+         mCT %in% c("bipolar", "rod bipolar")) %>% 
+  left_join(hr_neural %>% enframe(name = 'Cell Type', value = 'leiden3') %>% unnest(leiden3),
+             by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = `Cell Type`), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = 
+                       c(pals::alphabet2(), pals::glasbey(),
+                         pals::alphabet(), pals::brewer.set1(n=12)) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+## horizontal
+
+```{r echo=FALSE, fig.cap="bipolar", out.width = '20%'}
+knitr::include_graphics("images/horizontal.png")
+# https://www.nature.com/articles/s41598-020-66092-9
+```
+
+```{r}
+diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT == 'horizontal') %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('ONECUT1','ONECUT2','LHX1','ISL1')) %>% 
+  select(SYMBOL, base, logfoldchanges) %>% 
+  ggplot(aes(x=as.factor(base), y=SYMBOL, color = logfoldchanges)) + 
+  geom_point(size =10) +
+  scale_color_viridis_c()
+
+
+tib <- diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT == 'horizontal') %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('ONECUT1','ONECUT2','LHX1','ISL1')) %>% 
+  select(SYMBOL, base, logfoldchanges) %>% 
+  pivot_wider(values_from = logfoldchanges, names_from = base)
+
+mat <- tib %>% select(-1) %>% as.matrix()
+row.names(mat) <- tib %>% pull(1)
+col_fun = circlize::colorRamp2(c(-4, 0, 4), c("blue", "white", "red"))
+ComplexHeatmap::Heatmap(mat, col=col_fun)
+
+hr_neural$`horizontal (h1)` <- c(18,70)
+hr_neural$`horizontal (h2)` <- c(58)
+```
+
+```{r, fig.width=9, fig.height=9}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural,
+         mCT %in% c("horizontal")) %>% 
+  left_join(hr_neural %>% enframe(name = 'Cell Type', value = 'leiden3') %>% unnest(leiden3),
+             by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = `Cell Type`), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = 
+                       c(pals::alphabet2(), pals::glasbey(),
+                         pals::alphabet(), pals::brewer.set1(n=12)) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+
+## amacrine
+Most amacrine cells are inhibitory neurons utilizing GABA or glycine as neurotransmitters. By assessing the expression of marker genes for GABAergic (glutamate carboxylase, GAD1 and GAD2) and glycinergic (SLC6A9, encoding the high affinity glycine transporter GLYT1) amacrines20, we identified 16 putative GABAergic and 8 putative glycinergic amacrine cell types among a total of 25 types (Fig. 3a,b). One type (C14) expressed none of these three genes at high levels, and might correspond to a non-GABAergic non-Glycinergic (nGnG) type identified in mouse2122 . One of the glycinergic types (C17) also expressed GAD2, raising the possibility that it uses both transmitters.
+
+**REMOVING CLUSTER 0 AS IT IS STUDY SPECIFIC AND NOT EXPRESSING ANY KNOWN GABA/GLYCI MARKERS**
+
+```{r, fig.width=6, fig.height=2}
+
+
+tib <- diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT == 'amacrine') %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('GAD1','GAD2','SLC6A9','NFIA')) %>% 
+  select(SYMBOL, base, logfoldchanges) %>% 
+  pivot_wider(values_from = logfoldchanges, names_from = base)
+
+mat <- tib %>% select(-1) %>% as.matrix()
+row.names(mat) <- tib %>% pull(1)
+col_fun = circlize::colorRamp2(c(-5, 0, 5), c("blue", "white", "red"))
+ComplexHeatmap::Heatmap(mat, col=col_fun)
+
+sus_neural <- c(sus_neural,
+                           c(0))
+hr_neural$`amacrine (gabanergic)` <- c(76,67,56,59,37,62,73,15,69,44,75,83,24,66,22,26,80,41,61,42)
+hr_neural$`amacrine (glycinergic)` <- c(25,16,88,43)
+hr_neural$`amacrine (gaba/glyci)` <- c(91,31,65)
+```
+
+```{r, fig.width=9, fig.height=9}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural,
+         mCT %in% c("amacrine")) %>% 
+  left_join(hr_neural %>% enframe(name = 'Cell Type', value = 'leiden3') %>% unnest(leiden3),
+             by = 'leiden3') %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = `Cell Type`), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = 
+                       c(pals::alphabet2(), pals::glasbey(),
+                         pals::alphabet(), pals::brewer.set1(n=12)) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+
+## retinal ganglion
+
+These don't match up to the published markers very well - for example the parasol RG seem to be a mixed ON/OFF cluster. Should run a retinal ganglion specific scVI run and see whether that does a better job. 
+
+```{r}
+
+tib <- diff_neural$diff_testing %>% 
+  left_join(obs_neural$labels, by = c('base'='leiden3')) %>% 
+  filter(mCT %in% c('retinal ganglion'), !base %in% sus_neural) %>% 
+  left_join(conv_table) %>% 
+  filter(SYMBOL %in% c('TPBG','TBR1','FABP4','CHRNA2', 'LMO2',
+  'EOMES','SSTR2','FOXP2','FOXP1','PRR35','CARTPT',
+  'CDKN2A','ARPP21','OPN4', 'NEFM',
+  'TUBB3')) %>% 
+  select(SYMBOL, base, scores) %>% 
+  pivot_wider(values_from = scores, names_from = base)
+
+mat <- tib %>% select(-1) %>% as.matrix()
+row.names(mat) <- tib %>% pull(1)
+
+col_fun = circlize::colorRamp2(c(-15, 0, 15), c("blue", "white", "red"))
+ComplexHeatmap::Heatmap(mat, col=col_fun)
+
+```
+```{r}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(mCT == 'retinal ganglion', SubCellType != '') %>% 
+  left_join(obs_neural$labels) %>% 
+  group_by(leiden3, SubCellType) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  filter(Ratio > 0.5) %>% arrange(SubCellType)
+
+hr_neural$`retinal ganglion (ON midget)` <- c(45, 54,63, 92)
+hr_neural$`retinal ganglion (OFF midget)` <- c(19,34,57,71,79, 89, 96)
+
+hr_neural$`retinal ganglion (parasol)` <- c(64)
+```
+```{r echo=FALSE, fig.cap="pr", out.width = '20%'}
+knitr::include_graphics("images/rgc.png")
+# https://www.nature.com/articles/s41598-020-66092-9
+```
+
+
+```{r, fig.width=9, fig.height=9}
+obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  filter(!leiden3 %in% sus_neural,
+         mCT %in% c("retinal ganglion")) %>% 
+  left_join(hr_neural %>% enframe(name = 'Cell Type', value = 'leiden3') %>% unnest(leiden3),
+             by = 'leiden3') %>% 
+  mutate(`Cell Type` = case_when(is.na(`Cell Type`) ~ mCT,
+                                 TRUE ~ `Cell Type`)) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = `Cell Type`), pointsize = 0.8, alpha = 1) +
+  ggrepel::geom_label_repel(data = . %>% group_by(leiden3) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = leiden3)) +
+  scale_color_manual(values = 
+                       c(pals::glasbey(), pals::glasbey(), pals::alphabet(), pals::brewer.set1(n=12)) %>% unname()) + 
+  cowplot::theme_cowplot()
+```
+
+
+
+
+# NEW 
+
+Update overall graphics on the new labels
+
+## UMAP
+```{r, fig.width=12, fig.height=9}
+
+hr_long <- hr_neural %>% enframe(name = 'hrCT', value = 'leiden3') %>% unnest(leiden3) 
+
+obs_neural$nobs <- obs_neural$obs %>% 
+  left_join(obs_neural$labels, by = 'leiden3') %>% 
+  left_join(hr_long, 
+            by = 'leiden3') %>%
+ mutate(suspect = case_when(leiden3 %in% sus_neural ~ TRUE,
+                             TRUE ~ FALSE)) %>%  
+  mutate(CT = mCT,
+         hrCT = case_when(!is.na(hrCT) ~ hrCT,
+                          TRUE ~ CT))
+
+obs_neural$nlabels <- obs_neural$labels %>% 
+  left_join(hr_long, 
+            by = 'leiden3') %>%
+ mutate(suspect = case_when(leiden3 %in% sus_neural ~ TRUE,
+                             TRUE ~ FALSE)) %>%  
+  mutate(CT = mCT,
+         hrCT = case_when(!is.na(hrCT) ~ hrCT,
+                          TRUE ~ CT))
+
+obs_neural$nobs %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = CT), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(CT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = CT, color = CT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none") +
+  facet_wrap(~suspect)
+
+obs_neural$nobs %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = suspect), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(CT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = CT)) +
+  scale_color_manual(values = c("blue","pink") %>% unname()) + 
+  cowplot::theme_cowplot() 
+
+obs_neural$nobs %>% 
+  filter(!suspect) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = hrCT), pointsize = 0.8, alpha = 0.5) +
+  ggrepel::geom_label_repel(data = . %>% group_by(hrCT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = hrCT, color = hrCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none")
+
+obs_neural$nobs %>% 
+  filter(!suspect) %>% 
+  ggplot(aes(x=umap1,y=umap2)) +
+  scattermore::geom_scattermore(aes(color = as.factor(hrCT)), pointsize = 2.1, alpha = 0.5) +
+    ggrepel::geom_label_repel(data = . %>% group_by(CT, hrCT) %>% 
+                              summarise(umap1 = median(umap1),
+                                        umap2 = median(umap2)),
+                            aes(label = hrCT, color = hrCT)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey(), pals::alphabet(), pals::brewer.set1(9), pals::kelly()) %>% unname()) + 
+  cowplot::theme_cowplot() + theme(legend.position = "none") + facet_wrap(~CT)
+```
+
+## hclust
+```{r, fig.width = 18, fig.height = 10}
+pb <- pb <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye_neural/hs111_mature_eye_20240924_full__neural5000hvg_200e_50l.pseudoBulk.leiden3.csv.gz')
+colnames(pb) <- gsub("\\.\\d+","",colnames(pb))
+hvg <- data.table::fread('~/data/scEiaD_modeling/hs111_mature_eye_neural/hvg2000.csv.gz')[-1,]
+rnames <- pb$V1
+clust <- str_extract(rnames, '\\d+') %>% as.integer()
+pb <- pb[,-1] %>% as.matrix()
+row.names(pb) <- as.character(clust)
+filter_labels_ne <- obs_neural$nlabels %>% filter(!suspect)
+
+pb <- pb[as.character(filter_labels_ne$leiden3),]
+
+pb_norm <- metamoRph::normalize_data(t(pb), sample_scale = 'cpm') %>% t()
+
+pb_norm <- pb_norm[,hvg$V2]
+#pb_norm <- pb_norm[,hvg$V2[!hvg$V2 %in% c(cc_genes,ribo_genes)]]
+# https://stats.stackexchange.com/questions/31565/compute-a-cosine-dissimilarity-matrix-in-r
+sim <- pb_norm / sqrt(rowSums(pb_norm * pb_norm))
+sim <- sim %*% t(sim)
+D_sim <- as.dist(1 - sim)
+
+hclust_sim <- hclust(D_sim, method = 'average')
+
+hclust_sim$labels <- filter_labels_ne %>% pull(leiden3)
+
+library(ggtree)
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(filter_labels_ne, by = c("label" = "leiden3")) %>%
+  mutate(techRatio = round(techRatio, digits = 2))
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, CT, studyCount, TotalCount, techRatio, sep = ' - '), color = CT)) +
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) +
+  guides(color="none")
+
+
+p <- ggtree(hclust_sim)
+p$data <- p$data %>% left_join(filter_labels_ne %>% mutate(studies = case_when(studyCount ==1 ~ studies,
+                                                                                    TRUE ~ "multiple")), by = c("label" = "leiden3"))
+
+p + layout_dendrogram() +
+  geom_tiplab(aes(label = paste(label, CT, studies, sep = ' - '), color = CT)) +
+  geom_tippoint(aes(shape = studies), size= 3) +
+  theme_dendrogram(plot.margin=margin(16,16,300,16)) +
+  scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) +
+  guides(color="none")
+
+
+
+
+```
+
+# Output
+```{r}
+save(obs_neural, file = 'Human_Mature_Eye_full__stage4_neural.obs.freeze20241121.Rdata')
+obs_neural$nobs %>% select(barcode, leiden3, CT, hrCT) %>% write_csv('Human_Mature_Eye_full__stage4_neural.CTcalls.freeze20241121.csv.gz')
+```
