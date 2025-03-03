@@ -1,0 +1,15 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'hs111_dev_eye_stage4_20250226_'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_dev_eye_ref_bcs.full.20250226.stage4.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_dev_eye_query_bcs.full.20250226.stage4.csv.gz'
+epochs: ['100', '200','300']
+latent: ['20', '30','50']
+hvg: ['2000']
+input_h5ad: 'hs111.adata.solo.20250226.dev.stage4CT.h5ad'
+scanvi_on: "CT"
+scanvi_out: "scanvi_CT"
+pb_group: ['leiden3']
+scib: False 
+continuous_covariate_keys: ''
+scanvi_n_epochs: "150"
+conda: 'rapids_singlecell'

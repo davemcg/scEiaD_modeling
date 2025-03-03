@@ -1,7 +1,7 @@
 git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
-prefix: 'hs111_mature_eye_20240924_full__neural_s6__'
-ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage4_neural_ref_bcs.20240924-02.csv.gz'
-query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage4_neural_query_bcs.20240924-02.csv.gz'
+prefix: 'hs111_mature_eye_20250107_full__neural_s6__'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_ref_bcs.20250107.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_query_bcs.20250107.csv.gz'
 epochs: ['200']
 latent: ['30']
 hvg: ['2000']
