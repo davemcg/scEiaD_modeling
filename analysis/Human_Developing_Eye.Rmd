@@ -45,7 +45,7 @@ Found a mouse dev study: https://www.nature.com/articles/s41598-023-28429-y
 - run scvi on biowulf
 
 
-```{r, exec = FALSE}
+```{r, eval = FALSE}
 library(tidyverse)
 sample_meta <- data.table::fread('~/git/scEiaD_quant/sample_meta.scEiaD_v1.2025_02_03.02.tsv.gz')
 cell_meta <- data.table::fread('~/data/scEiaD_modeling/hs111.adata.solo.20250204.obs.csv.gz')[,-1] %>% 
@@ -97,20 +97,20 @@ hs111_dev_query_bcs <- hs111_dev_eye %>%
 
 now go to biowulf2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye
 
-```{bash, exec = FALSE}
+```{bash, eval = FALSE}
 cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye
 source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
 sbatch --time=8:00:00 snakecall.sh
 ```
 
 ## rsync output from biowulf2 to local computer
-```{bash, exec = FALSE}
+```{bash, eval = FALSE}
 cd /Users/mcgaugheyd/data/scEiaD_modeling/hs111_developing_eye
 rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye/*obs* .
 ```
 
 # run CT predictions from our collated models
-```{bash, exec = FALSE}
+```{bash, eval = FALSE}
 cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye
 source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
 mamba activate rapids_singlecell
@@ -466,6 +466,7 @@ first step in the scVI process is to pick a random number of each cell type (inc
 nonretinal_leiden3 <- cutree(hclust_sim, k = 4) %>% enframe(name = 'leiden3', value = 'hclust_k3') %>% filter(hclust_k3 != 1)
 
 nonretinal_obs <- obs$obs %>% filter(leiden3 %in% nonretinal_leiden3$leiden3)
+
 #nonretinal_obs$barcodei %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_dev_eye_ref_bcs.full.20250221.nonretinal.csv.gz'))
 ```
 
@@ -809,7 +810,7 @@ nobs_f <- nobs %>% filter(!leiden3 %in% remove_leiden3)
 ```
 
 ```{r, fig.width=18, fig.height=18}
-nobs %>% 
+nobs_f %>% 
   #filter(!leiden3 %in% remove_leiden3) %>% 
   ggplot(aes(x=umap1,y=umap2)) +
   scattermore::geom_scattermore(aes(color = CT), pointsize = 0.8, alpha = 0.5) +
@@ -820,7 +821,7 @@ nobs %>%
   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
   cowplot::theme_cowplot() + theme(legend.position = "none")
 
-nobs %>% 
+nobs_f %>% 
   #filter(!leiden3 %in% remove_leiden3) %>% 
   ggplot(aes(x=umap1,y=umap2)) +
   scattermore::geom_scattermore(aes(color = CT), pointsize = 1.1, alpha = 0.5) +
@@ -839,16 +840,16 @@ Remake the scVI models with the updated CT calls (and cell removal)
 
 ```{r}
 set.seed(2025-02-25)
-ref <- nobs %>% group_by(study_accession, CT) %>% 
+ref <- nobs_f %>% group_by(study_accession, CT) %>% 
   slice_sample(n = 2000, replace = TRUE) %>% 
   unique()
 
-query <- nobs %>% filter(!barcodei %in% ref$barcodei)
+query <- nobs_f %>% filter(!barcodei %in% ref$barcodei)
 
-ref$barcodei %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_dev_eye_ref_bcs.full.20250225.stage4.csv.gz'))
-query$barcodei %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_dev_eye_query_bcs.full.20250225.stage4.csv.gz'))
-
-nobs %>% dplyr::rename(barcode = barcodei) %>% write_csv('~/git/scEiaD_modeling/data/Human_Developing_Eye__stage4_CTcalls.freeze20250225.01.csv.gz')
+# ref$barcodei %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_dev_eye_ref_bcs.full.20250226.stage4.csv.gz'))
+# query$barcodei %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_dev_eye_query_bcs.full.20250226.stage4.csv.gz'))
+# 
+# nobs_f %>% dplyr::rename(barcode = barcodei) %>% write_csv('~/git/scEiaD_modeling/data/Human_Developing_Eye__stage4_CTcalls.freeze20250226.01.csv.gz')
 ```
 
 Apply new CT calls to a new h5ad
@@ -858,17 +859,21 @@ cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye/stage4
 source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
 mamba activate rapids_singlecell
 
-python ~/git/scEiaD_modeling/workflow/scripts/append_obs.py ../hs111.adata.solo.20250204.dev.h5ad /home/mcgaugheyd/git/scEiaD_modeling/data/Human_Developing_Eye__stage4_CTcalls.freeze20250225.01.csv.gz  hs111.adata.solo.20250225.dev.stage4CT.h5ad --transfer_columns MajorCellType,CT
+python ~/git/scEiaD_modeling/workflow/scripts/append_obs.py ../hs111.adata.solo.20250204.dev.h5ad /home/mcgaugheyd/git/scEiaD_modeling/data/Human_Developing_Eye__stage4_CTcalls.freeze20250226.01.csv.gz  hs111.adata.solo.20250226.dev.stage4CT.h5ad --transfer_columns MajorCellType,CT
 
 # run scVI snake pipeline again
 sbatch --time=8:00:00 snakecall.sh
 ```
 
+
+## Pull in CT calls / UMAP
 ```{r}
-obs_stage4 <- pull_obs('~/data/scEiaD_modeling/hs111_developing_eye/stage4/hs111_dev_eye_stage4_20250225_2000hvg_200e_50l.obs.csv.gz', machine_label = 'scanvi_CT', label = 'CT')
+obs_stage4 <- pull_obs('~/data/scEiaD_modeling/hs111_developing_eye/stage4/hs111_dev_eye_stage4_20250226_2000hvg_200e_50l.obs.csv.gz', machine_label = 'scanvi_CT', label = 'CT')
 ```
 
-```{r, fig.width=12,fig.height=12}
+## Tweak CT calls
+Group by leiden3, cell type and rename cell types in the minority (5% in this case) to the majority cell type call
+```{r}
 # retains CT calls >= 0.05 of a cluster. anything below gets changed to the dominant ct
 nobs_s4_cleaning <- obs_stage4$obs %>% 
   group_by(leiden3, scanvi_CT) %>% 
@@ -882,7 +887,12 @@ nobs_s4 <- obs_stage4$obs %>%
   left_join(nobs_s4_cleaning %>% 
               select(leiden3, scanvi_CT, CTc), by = c("leiden3","scanvi_CT"))
 
+nobs_s4 %>% mcHelpeRs::sum_rat(CT, CTc, threshold = 0.01)
+```
+
+```{r, fig.width=12,fig.height=12}
 nobs_s4 %>% 
+  
   ggplot(aes(x=umap1,y=umap2)) +
   
   scattermore::geom_scattermore(aes(color = CT), pointsize = 0.8, alpha = 0.5) +
@@ -895,7 +905,9 @@ nobs_s4 %>%
   ggtitle("CT")
 
 nobs_s4 %>% 
-  filter(leiden3 == 14) %>% 
+  #filter(leiden3 == 14) %>% 
+  # select(-contains("umap")) %>% 
+  # left_join(obs$obs %>% select(barcodei, umap1, umap2)) %>% 
   ggplot(aes(x=umap1,y=umap2)) +
   
   scattermore::geom_scattermore(aes(color = CTc), pointsize = 0.8, alpha = 0.5) +
@@ -905,7 +917,7 @@ nobs_s4 %>%
                             aes(label = CTc, color = CTc)) +
   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) + 
   cowplot::theme_cowplot() + theme(legend.position = "none") +
-  ggtitle("scanvi_CT")
+  ggtitle("CTc")
 
 nobs_s4 %>% 
   ggplot(aes(x=umap1,y=umap2)) +
@@ -917,16 +929,63 @@ nobs_s4 %>%
                            color = 'black', bg.color = 'white') +
   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey(), pals::alphabet(), pals::kelly(), pals::brewer.set1(10)) %>% unname()) + 
   cowplot::theme_cowplot() + theme(legend.position = "none") +
-  ggtitle("leiden3 - CT")
+  ggtitle("leiden3 - CTc")
 
 nobs_s4 %>% 
+  # select(-contains("umap")) %>% 
+  # left_join(obs$obs %>% select(barcodei, umap1, umap2)) %>% 
   ggplot(aes(x=umap1,y=umap2)) +
   scattermore::geom_scattermore(aes(color = as.factor(leiden3)), pointsize = 0.8, alpha = 0.5) +
   cowplot::theme_cowplot() + theme(legend.position = "none") +
   facet_wrap(~CTc) +
-  ggtitle("CT")
+  ggtitle("CTc")
 
 
+```
+
+## Confusion Matrix
+
+From Author Label (after my manual nomenclature normalization)
+```{r, fig.width=16, fig.height=16}
+machine_label = 'CTc'; label = 'MajorCellType'
+nobs_s4 %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  ggplot(aes(x=.data[[label]],y=.data[[machine_label]],fill=Ratio, label = round(Ratio, 2))) + 
+  geom_tile() + 
+  shadowtext::geom_shadowtext() + 
+  cowplot::theme_cowplot() +
+  scale_fill_viridis_c(begin = 0, end = 1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r, fig.width=16, fig.height=16}
+machine_label = 'CT'; label = 'CTc'
+nobs_s4 %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  ggplot(aes(x=.data[[label]],y=.data[[machine_label]],fill=Ratio, label = round(Ratio, 2))) + 
+  geom_tile() + 
+  shadowtext::geom_shadowtext() + 
+  cowplot::theme_cowplot() +
+  scale_fill_viridis_c(begin = 0, end = 1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+```{r}
+# nobs_s4 %>%
+#   dplyr::rename(barcode = barcodei) %>%
+#   relocate(barcode) %>%
+#   select(-c(leiden, leiden2, leiden5,CT, capture_covariate, CellType,
+#             solo_doublet)) %>%
+#   dplyr::rename(CT = CTc, CT_scanvi_score = scanvi_CT_max_score, Author_CT = SubCellType) %>%
+#   write_csv("~/data/scEiaD_modeling/hs111_developing_eye/stage4/hs111_dev_eye_stage4_20250226_2000hvg_200e_50l.nobs.v01.select.csv.gz")
+# 
+# nobs_s4 %>%
+#   write_csv("~/data/scEiaD_modeling/hs111_developing_eye/stage4/hs111_dev_eye_stage4_20250226_2000hvg_200e_50l.nobs.v01.full.csv.gz")
 ```
 
 

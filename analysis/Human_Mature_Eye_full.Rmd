@@ -24,7 +24,7 @@ knitr::opts_chunk$set(
 
 Evaluate the cell type labels (the "truth" for scANVI / scVI). 
 
-```{bash, exec = FALSE}
+```{bash, eval = FALSE, exec = FALSE}
 # edit and run this locally (laptop / etc)
 ~/git/scEiaD_quant/workflow/scripts/hand_change_ct_labels.R
 # rsync the new cell label file to biowulf
@@ -111,13 +111,13 @@ hs111_query_bcs <- hs111_eye %>%
 
 now go to biowulf2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye
 
-```{bash, exec = FALSE}
+```{bash, eval = FALSE, exec = FALSE}
 # will take ~6-10 hours (depending on hpc usage)
 mamba deactivate; mamba activate; bash ~/git/scEiaD_modeling/Snakemake.wrapper.sh ~/git/scEiaD_modeling/workflow/Snakefile ~/git/scEiaD_modeling/config/config_hs111_mature_eye_full.yaml ~/git/scEiaD_modeling/config/cluster.json
 ```
 
 ## rsync output from biowulf2 to local computer
-```{bash, exec = FALSE}
+```{bash, eval = FALSE, exec = FALSE}
 cd /Users/mcgaugheyd/data/scEiaD_modeling/hs111_mature_eye
 rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/*scib* .
 rsync -Prav h2:/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/*obs* .
@@ -740,40 +740,18 @@ obs$nobs <- obs$nobs %>%
   mutate(CT_sus = case_when(suspect ~ paste0(CT, "_sus"), TRUE ~ CT),
          hrCT_sus = case_when(suspect ~ paste0(hrCT, "_sus"), TRUE ~ hrCT))
 # object
-save(obs, file = '~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.obs.Rdata')
+#save(obs, file = '~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.obs.Rdata')
 # barcodes only
-obs$nobs$barcode %>% write(gzfile("~/git/scEiaD_modeling/data/hs111_mature_eye_stage6.freeze20241121.bcs.csv.gz"))
+#obs$nobs$barcode %>% write(gzfile("~/git/scEiaD_modeling/data/hs111_mature_eye_stage6.freeze20241121.bcs.csv.gz"))
 
 # cell metadata
-obs$nobs %>% mutate(suspect = case_when(suspect ~ 'Yes',
-                                        TRUE ~ 'No')) %>% write_csv("~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.nobs.csv.gz")
+#obs$nobs %>% mutate(suspect = case_when(suspect ~ 'Yes',
+#                                        TRUE ~ 'No')) %>% #write_csv("~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.nobs.csv.gz")
 # cluster/CT metadata
-obs$nlabels %>%  write_csv("~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.nlabels.csv.gz")
+#obs$nlabels %>%  write_csv("~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20241121.nlabels.csv.gz")
 ```
 
 # Stage 6
-<!-- Run mouse and chick (adult / not fetal) data against the Stage 4 nonneural and neural scANVI models. -->
-
-<!-- Pondering how to best do this.... -->
-
-<!-- Parameters used (Stage 2 ran a bunch, in Stage 3 picked this one): 2000hvg 200e 30l -->
-
-<!-- I have three models (on biowulf2): -->
-
-<!-- - Stage 2 (all) -->
-<!-- - Stage 4 (nonneural and neural) -->
-
-<!-- Three approaches for new data:     -->
-<!--   1. Run against the Stage 2 model -->
-<!--     - contains a lot of (later) removed cells (or is this an upside?) -->
-<!--     - built against slightly inaccurate scANVI calls -->
-<!--   2. Run against Stage 4 moels -->
-<!--     - but there are two models (neural, nonneural) -->
-<!--   3. Build a new model -->
-<!--     - bleh -->
-<!--     - maybe the best idea? -->
-<!--     - twice? one for the CT and another for hrCT (high resolution) -->
-<!--     - `obs$nobs` and `obs$nlabels` also have the hand-QC fail cells -->
 
 Rebuild the three (well, four) models:
 
@@ -789,7 +767,7 @@ Rebuild the three (well, four) models:
   - write a new script / process to input in data (query) to run against the three models
   
 ## rebuild scVI models
-step1: update the ref and query barcodes to REMOVE the ones that have "suspect" labels
+update the ref and query barcodes to REMOVE the ones that have "suspect" labels
 ```{r}
 # step1: update the ref barcodes to REMOVE the ones that have "suspect" labels
 # and move them into the query side?
@@ -806,20 +784,20 @@ ref_nn <- scan('~/git/scEiaD_modeling/data/hs111_mature_eye__stage4_NONneural_re
 query_nn <- scan('~/git/scEiaD_modeling/data/hs111_mature_eye__stage4_NONneural_query_bcs.20241001-02.csv.gz', what='character')
 ref_nn_new <- s6_obs %>% filter(barcode %in% ref_nn, suspect == 'No') %>% pull(barcode)
 query_nn_new <- s6_obs %>% filter(barcode %in% query_nn, suspect == 'No') %>% pull(barcode)
-ref_nn_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_NONneural_ref_bcs.20250107.csv.gz'))
-ref_nn_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_NONneural_query_bcs.20250107.csv.gz'))
+# ref_nn_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_NONneural_ref_bcs.20250107.csv.gz'))
+# ref_nn_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_NONneural_query_bcs.20250107.csv.gz'))
 
 ref_ne <- scan('~/git/scEiaD_modeling/data/hs111_mature_eye__stage4_neural_ref_bcs.20240924-02.csv.gz', what='character')
 query_ne <- scan('~/git/scEiaD_modeling/data/hs111_mature_eye__stage4_neural_query_bcs.20240924-02.csv.gz', what='character')
 ref_ne_new <- s6_obs %>% filter(barcode %in% ref_ne, suspect == 'No') %>% pull(barcode)
 query_ne_new <- s6_obs %>% filter(barcode %in% query_ne, suspect == 'No') %>% pull(barcode)
-ref_ne_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_ref_bcs.20250107.csv.gz'))
-ref_ne_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_query_bcs.20250107.csv.gz'))
+# ref_ne_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_ref_bcs.20250107.csv.gz'))
+# ref_ne_new %>% write(gzfile('~/git/scEiaD_modeling/data/hs111_mature_eye__stage6_neural_query_bcs.20250107.csv.gz'))
 
 
 ```
 
-```{bash, eval = FALSE}
+```{bash, exec = FALSE, eval = FALSE}
 # on biowulf2
 cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full
 
@@ -846,39 +824,60 @@ sbatch --time=8:00:00 snakecall.sh
 
 ```
 
-# Next steps
+```{r}
+obs_s6_full <- pull_obs('/Users/mcgaugheyd/data/scEiaD_modeling/hs111_mature_eye_full/full_s6_clean_model/hs111_mature_eye_20250107_stage6_2000hvg_400e_30l.obs.csv.gz', machine_label = 'hrCT_scANVI_step6', label = 'hrCT')
 
-1. Use models made in Stage 6
+nobs_s6_cleaning <- obs_s6_full$obs %>% 
+  group_by(leiden3, hrCT_scANVI_step6) %>% 
+  summarise(Count = n()) %>%
+  mutate(Ratio = Count / sum(Count)) %>% 
+  mutate(dominant_celltype = hrCT_scANVI_step6[which.max(Count)]) %>% 
+  mutate(CTc = case_when(Ratio < 0.05 ~ dominant_celltype,
+                         TRUE ~ hrCT_scANVI_step6))
 
-<!-- ```{r, fig.width=12, fig.height=9} -->
-<!-- obs_s6 <- pull_obs('~/data/scEiaD_modeling/hs111_mature_eye_20241121_stage6_2000hvg_200e_30l.hrCT.obs.csv.gz', machine_label = 'hrCT_scANVI_step6') -->
-<!-- obs_s6$labels %>% filter(aMCT != mMCT) %>% data.frame -->
+nobs_s6 <- obs_s6_full$obs %>% 
+  left_join(nobs_s6_cleaning %>% 
+              select(leiden3, hrCT_scANVI_step6, CTc), by = c("leiden3","hrCT_scANVI_step6"))
 
+# nobs_s6 %>% mcHelpeRs::sum_rat(CT, CTc)
+# table(nobs_s6$hrCT == nobs_s6$CTc)
+```
+From Author Label (after my manual nomenclature normalization)
+```{r, fig.width=16, fig.height=16}
+machine_label = 'hrCT_scANVI_step6'; label = 'MajorCellType'
+nobs_s6 %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  ggplot(aes(x=.data[[label]],y=.data[[machine_label]],fill=Ratio, label = round(Ratio, 2))) + 
+  geom_tile() + 
+  shadowtext::geom_shadowtext() + 
+  cowplot::theme_cowplot() +
+  scale_fill_viridis_c(begin = 0, end = 1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
 
-<!-- obs_s6$obs %>%  -->
-<!--   filter(suspect != 'Yes') %>%  -->
-<!--   left_join(obs_s6$labels, by = 'leiden3') %>%  -->
-<!--   ggplot(aes(x=umap1,y=umap2)) + -->
-<!--   scattermore::geom_scattermore(aes(color = hrCT_scANVI_step6), pointsize = 0.8, alpha = 0.5) + -->
-<!--   ggrepel::geom_label_repel(data = . %>% group_by(hrCT_scANVI_step6) %>%  -->
-<!--                               summarise(umap1 = median(umap1), -->
-<!--                                         umap2 = median(umap2)), -->
-<!--                             aes(label = hrCT_scANVI_step6, color = hrCT_scANVI_step6)) + -->
-<!--   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) +  -->
-<!--   cowplot::theme_cowplot() + theme(legend.position = "none") -->
+```{r, fig.width=20, fig.height=20}
+machine_label = 'hrCT_scANVI_step6'; label = 'hrCT'
+nobs_s6 %>% 
+  group_by(.data[[label]],.data[[machine_label]]) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Ratio = Count/sum(Count)) %>% 
+  ggplot(aes(x=.data[[label]],y=.data[[machine_label]],fill=Ratio, label = round(Ratio, 2))) + 
+  geom_tile() + 
+  shadowtext::geom_shadowtext() + 
+  cowplot::theme_cowplot() +
+  scale_fill_viridis_c(begin = 0, end = 1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
 
-<!-- # obs_s6$obs %>%  -->
-<!-- #   left_join(obs_s6$labels, by = 'leiden3') %>%  -->
-<!-- #   ggplot(aes(x=umap1,y=umap2)) + -->
-<!-- #   scattermore::geom_scattermore(aes(color = CT), pointsize = 0.8, alpha = 0.5) + -->
-<!-- #   ggrepel::geom_label_repel(data = . %>% group_by(CT) %>%  -->
-<!-- #                               summarise(umap1 = median(umap1), -->
-<!-- #                                         umap2 = median(umap2)), -->
-<!-- #                             aes(label = CT, color = CT)) + -->
-<!-- #   scale_color_manual(values = c(pals::alphabet2(), pals::glasbey()) %>% unname()) +  -->
-<!-- #   cowplot::theme_cowplot() + theme(legend.position = "none") -->
-
-<!-- ``` -->
+# Final Outputs
+```{r}
+nobs_s6 %>% select(barcode = barcodei, background_fraction:SubCellType, scEiaD_hrCT = CTc, hrCT_scANVI_step6, hrCT_scANVI_step6_max_score, side, leiden3, leiden5) %>%
+#   left_join(obs$nobs %>% select(barcode, umap1, umap2)) %>% write_csv("~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20250331.nobs.csv.gz")
+# 
+# system(glue::glue("cp ~/data/scEiaD_modeling/hs111_mature_eye_full/hs111_mature_eye_stage6.freeze20250331.nobs.csv.gz ~/data/sc_resources/mgif/scEiaD_hs111_mature_eye_20241121_full_2000hvg_200e_30l_stage6/"))
+```
 
 ```{r}
 sessionInfo()
