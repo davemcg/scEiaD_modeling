@@ -11,11 +11,28 @@ def query_bcs(query):
 		out = "--query_csv " + query + " "
 	return out
 
-def scib_out(scib_config):
-	if scib_config:
+def scib_out(wildcards):
+	if config['scib']:
+		#out = ''
 		out = '--scib ' + config['prefix'] + wildcards.hvg + "hvg_" + wildcards.epochs + "e_" + wildcards.latent + "l.scib.csv"
 	else:
+		out = ""
+	return out
+
+def cck(wildcards):
+	if 'continuous_covariate_keys' not in config:
 		out = ''
+	elif config['continuous_covariate_keys'] == '':
+		out = '--continuous_covariate_keys \'\''
+	else:
+		out = '--continuous_covariate_keys ' + config['continuous_covariate_keys']
+	return out
+
+def returner(field):
+	if field not in config:
+		out = ''
+	else:
+		out = "--" + field + " " + config[field]
 	return out
 
 rule all:
@@ -31,19 +48,30 @@ rule all:
 				latent = config['latent'],
 				against = config['pb_group']) #['leiden3','MajorCellType', 'leiden5'])
 
+if 'conda' in config.keys():
+	conda_env = config['conda']
+else:
+	print("Using rapids")
+	conda_env = 'rapids_singlecell'
+print(conda_env)
+
 rule run_scvi:
 	input:
 		config['input_h5ad']
 	output:
-		obs = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.obs.csv.gz',
-		scib = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.scib.csv'
+		obs = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.obs.csv.gz'
+		#scib = config['prefix'] + '{hvg}hvg_{epochs}e_{latent}l.scib.csv'
 	conda:
-		"rscvi"
+		conda_env
 	params:
 		query = lambda wildcards: query_bcs(config['query_bcs']),
 		scanvi_on = config['scanvi_on'],
 		scanvi_out = config['scanvi_out'],
-		scib = lambda wildcards: scib_out(config['scib'])
+		scib = lambda wildcards: scib_out(wildcards),
+		cck = lambda wildcards: cck(wildcards),
+		capture_type_col = lambda wildcards: returner('capture_type_col'),
+		biological_sample_col = lambda wildcards: returner('biological_sample_col'),
+		scanvi_n_epochs = lambda wildcards: returner('scanvi_n_epochs')
 	shell:
 		"""
 		python {git_dir}/workflow/scripts/run_scvi.py \
@@ -61,7 +89,9 @@ rule run_scvi:
 			--scanvi_model_out scanviModel.{config[prefix]}_{wildcards.hvg}hvg_{wildcards.epochs}e_{wildcards.latent}l \
 			--scanvi_predict__on {params.scanvi_on} \
 			--scanvi_predict__out {params.scanvi_out} \
-			{params.scib}	
+			{params.scib} {params.cck} \
+			{params.capture_type_col} {params.biological_sample_col} \
+			{params.scanvi_n_epochs}
 		"""
 	
 rule diff_testing:

@@ -27,8 +27,12 @@ new_obs = new_obs.drop(args.index_column, axis = 1)
 # pull original obs info
 old_obs = pd.DataFrame(adata.obs)
 
+# drop col in original if present in the transfer_cols
+old_obs = old_obs.drop(columns=[col for col in transfer_cols if col in old_obs.columns])
+
 # left join
 updated_obs = old_obs.join(new_obs[transfer_cols])
+
 
 # transfer columns over
 adata.obs[transfer_cols] = updated_obs[transfer_cols]

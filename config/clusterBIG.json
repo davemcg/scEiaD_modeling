@@ -11,9 +11,9 @@
 	"run_scvi":
 	{
 		"time" : "10:00:00",
-		"mem" : "128G",
+		"mem" : "256G",
 		"partition" : "gpu",
-		"extra" : " --gres=gpu:a100:1,lscratch:5"
+		"extra" : " --gres=gpu:v100x:1,lscratch:5"
 	},
 	"diff_testing":
 	{

@@ -1,0 +1,15 @@
+git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+prefix: 'mm111_mature_eye_20250611_'
+ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/mm111_mature_eye_ref_bcs.20250611.csv.gz'
+query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/mm111_mature_eye_query_bcs.20250611.csv.gz'
+epochs: ['50','200','400']
+latent: ['20','30','50']
+hvg: ['1000','2000']
+input_h5ad: '../../mm111.adata.solo.20250131.h5ad'
+scanvi_on: "MajorCellType"
+scanvi_out: "scANVI_MCT"
+pb_group: ['leiden','leiden2','leiden3','leiden5' ]
+scib: True
+continuous_covariate_keys: 'pct_counts_mt,pct_counts_ribo,pct_counts_protocadherin'
+scanvi_n_epochs: "150"
+conda: 'rscvi'
