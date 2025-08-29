@@ -11,6 +11,7 @@ import scvi
 import torch
 import anndata as ad
 import cupy as cp
+import re
 
 import rapids_singlecell as rsc
 import rmm
@@ -64,6 +65,7 @@ try:
 except:
     print('')
 
+
 #adata.raw = adata
 # build the major categorial covariate column
 # two columns
@@ -79,6 +81,7 @@ if 'MajorCellType' in adata.obs.columns:
     if 'unlabelled' not in adata.obs.MajorCellType.cat.categories:
         adata.obs.MajorCellType = adata.obs.MajorCellType.cat.add_categories('unlabelled')
     adata.obs.MajorCellType = adata.obs.MajorCellType.fillna('unlabelled')
+
 print('adata loaded')
 
 
@@ -90,11 +93,14 @@ if args.continuous_covariate_keys != '':
     sc.pp.calculate_qc_metrics(adata, qc_vars=['protocadherin'], percent_top=None, log1p=False, inplace=True)
     print('metrics calculated')
 
+
 # remove .digit from var_names
-vn = adata.var_names
-new_vn = vn.to_series().str.replace('\.\d+','',regex=True)
-adata.var['ensembl'] = new_vn
-adata.var_names = adata.var['ensembl']
+ensembl_pattern = r'^ENS(G|MUS)[0-9]+\.[0-9]+$'
+if bool(re.match(ensembl_pattern, adata.var_names[0], re.IGNORECASE)):
+    vn = adata.var_names
+    new_vn = vn.to_series().str.replace('\.\d+','',regex=True)
+    adata.var['ensembl'] = new_vn
+    adata.var_names = adata.var['ensembl']
 
 def subset_adata(input_csv, input_type):
     partition_samples = pd.read_csv(input_csv, header = None)[0]
