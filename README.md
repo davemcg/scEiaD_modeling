@@ -20,7 +20,12 @@ find . -name "QC.adata.solo.h5ad" > fin.h5ad.txt
 ## human files
 grep hs111 fin.h5ad.txt > hs111.fin.txt
 mamba activate rscvi
-python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py hs111.fin.txt /home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz /home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_26.csv.gz hs111.adata.solo.20240826.h5ad
+python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py \
+  --adata_files_txt hs111.fin.txt \
+  --sample_meta_tsv /home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz \
+  --cell_label_csv /home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_26.csv.gz \
+  --output_h5ad_name hs111.adata.solo.20240826.h5ad \
+  --output_obs_name hs111.adata.solo.20240826.obs.csv.gz
 ```
 
 ### Peek into the files
