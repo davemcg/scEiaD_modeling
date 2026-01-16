@@ -4,7 +4,12 @@
 Take cleaned and auto QC'ed counts from [scEiaD quant](http://github.com/davemcg/scEiaD_quant) and build tissue / compartment level [scVI](http://scvi-tools.org) models and call cell types.
 
 # Step 1
-Run workflow/scripts/merge_adata.py with metadata to build a custom h5ad object
+Run workflow/scripts/merge_adata.py with metadata to build a custom h5ad object. 
+
+There are three key inputs:
+  1. The h5ad files (duh, they are the count s). 
+  2. Sample metadata (see below for example)
+  3. Cell metadata (also see below)
 
 ## Example 
 ```
@@ -17,6 +22,37 @@ grep hs111 fin.h5ad.txt > hs111.fin.txt
 mamba activate rscvi
 python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py hs111.fin.txt /home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz /home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_26.csv.gz hs111.adata.solo.20240826.h5ad
 ```
+
+### Peek into the files
+/home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz 
+(this can be the same as the `srr_sample_file` file used in [scEiaD_quant](github.com/davemcg/scEiad_quant)
+```
+sample_accession	run_accession	library_layout	reference	kb_tech	umi	workflow	kb_sum	organism	platform	study_accession	tissue	sub_tissue	covariate	perturbation	integration_group	tissuenote	source	bam10x	comment	biosample	organ	sex	biosample_title	strain	batch	age	capture_typeenriched_cell_type	suspension_enrichment_factors	ethnicity
+SRX14524742	SRR18390614	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Ciliary body		Pt2	NA		Right Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390614/Pt2CB.bam.1	NA	SAMN26813876	Eye		Pt2CB	NA	SRP364915_10xv3_Pt2	Adult	nucleus
+SRX14524741	SRR18390615	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Lens		Pt14	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390615/Pt14Lens.bam.1	NA	SAMN26813877	Eye		Pt14Lens	NA	SRP364915_10xv3_Pt14	Adult	nucleus
+SRX14524740	SRR18390616	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Cornea		Pt14	NA		Left Eye	Tissue	https://sra-pub-src-1.s3.amazonaws.com/SRR18390616/Pt14Cornea.bam.1	NA	SAMN26813878	Eye		Pt14Cornea	NA	SRP364915_10xv3_Pt14	Adult	nucleus
+SRX14524739	SRR18390617	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Trabecular meshwork		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390617/Hu235OSTM.bam.1	NA	SAMN26813879	Eye		Hu235OSTM	NA	SRP364915_10xv3_Hu0235	Adult   	nucleus
+SRX14524738	SRR18390618	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Cornea sclera wedge		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390618/Hu235OSCSW.bam.1	NA	SAMN26813880	Eye		Hu235OSCSW	NA	SRP364915_10xv3_Hu0235	Adult   	nucleus
+SRX14524737	SRR18390619	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Iris		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390619/Hu235IrisS2.bam.1	NA	SAMN26813881	Eye		Hu235IrisS2	NA	SRP364915_10xv3_Hu0235	Adult	nucleus
+SRX14524736	SRR18390620	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Iris		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390620/Hu235IrisS1.bam.1	NA	SAMN26813882	Eye		Hu235IrisS1	NA	SRP364915_10xv3_Hu0235	Adult	nucleus
+SRX14524735	SRR18390621	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Cornea		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390621/Hu235Cornea.bam.1	NA	SAMN26813883	Eye		Hu235Cornea	NA	SRP364915_10xv3_Hu0235	Adult	nucleus
+SRX14524734	SRR18390622	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Ciliary body		Hu0235	NA		Left Eye	Tissue	https://sra-pub-src-1.s3.amazonaws.com/SRR18390622/Hu235CB.bam.1	NA	SAMN26813884	Eye		Hu235CB	NA	SRP364915_10xv3_Hu0235	Adult	nucleus
+```
+
+/home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_26.csv.gz
+```
+barcode,MajorCellType,CellType,SubCellType,cell_type_ontology_term_id
+AAACCCAAGGGATGTC_SRX19501854,amacrine,glycinergic amacrine cell,HAC14,CL:4030028
+AAACCCACACGCACCA_SRX19501854,rod,retinal rod cell,Rod,CL:0000604
+AAACCCACAGTAGTTC_SRX19501854,amacrine,glycinergic amacrine cell,AII_1,CL:4030028
+AAACCCAGTGCCCTTT_SRX19501854,amacrine,glycinergic amacrine cell,VG3,CL:4030028
+AAACCCATCTCCACTG_SRX19501854,rod,retinal rod cell,Rod,CL:0000604
+AAACCCATCTTGGATG_SRX19501854,amacrine,starburst amacrine cell,ON-SAC,CL:0004232
+AAACGAAAGGGTGGGA_SRX19501854,rod,retinal rod cell,Rod,CL:0000604
+AAACGAAAGTACCGGA_SRX19501854,mueller,Mueller cell,MG,CL:0000636
+AAACGAACAAGTGGGT_SRX19501854,amacrine,GABAergic amacrine cell,HAC5,CL:4030027
+```
+
 
 # Step 2
 
