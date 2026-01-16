@@ -26,6 +26,8 @@ python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py hs111.fin.txt /home
 ### Peek into the files
 /home/mcgaugheyd/git/scEiaD_quant/sample_meta.scEiaD_v1.2024_02_28.01.tsv.gz 
 (this can be the same as the `srr_sample_file` file used in [scEiaD_quant](github.com/davemcg/scEiad_quant)
+
+`sample_accession` is hard-coded into `merge_adata.py` as the join field.
 ```
 sample_accession	run_accession	library_layout	reference	kb_tech	umi	workflow	kb_sum	organism	platform	study_accession	tissue	sub_tissue	covariate	perturbation	integration_group	tissuenote	source	bam10x	comment	biosample	organ	sex	biosample_title	strain	batch	age	capture_typeenriched_cell_type	suspension_enrichment_factors	ethnicity
 SRX14524742	SRR18390614	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP364915	Ciliary body		Pt2	NA		Right Eye	Tissue	https://sra-pub-src-2.s3.amazonaws.com/SRR18390614/Pt2CB.bam.1	NA	SAMN26813876	Eye		Pt2CB	NA	SRP364915_10xv3_Pt2	Adult	nucleus
@@ -40,6 +42,8 @@ SRX14524734	SRR18390622	PAIRED	hs111	10xv3	TRUE	nac	total	Homo sapiens	10xv3	SRP
 ```
 
 /home/mcgaugheyd/git/scEiaD_quant/scEiaD_cell_labels_2024_08_26.csv.gz
+
+`barcode` is hard-coded into `merge_adata.py` as the join field.
 ```
 barcode,MajorCellType,CellType,SubCellType,cell_type_ontology_term_id
 AAACCCAAGGGATGTC_SRX19501854,amacrine,glycinergic amacrine cell,HAC14,CL:4030028
