@@ -20,10 +20,62 @@ python ~/git/scEiaD_modeling/workflow/scripts/merge_adata.py hs111.fin.txt /home
 
 # Step 2
 
-=======
-Take cleaned and auto QC'ed counts from [scEiaD quant](http://github.com/davemcg/scEiaD_quant) and build tissue / compartment / stage level [scVI](http://scvi-tools.org) models and call cell types.
+## Option A
 
-#  Models
+Make a new sc(an)VI model for the data. 
+
+Workflow:
+
+  - Update yaml file for `scEiaD_modeling/workflow/Snakefile`. Example: 
+```
+      # cat ~/git/scEiaD_modeling/config/config_hs111_dev_eye_full.yaml
+      git_dir: '/home/mcgaugheyd/git/scEiaD_modeling/'
+      prefix: 'hs111_dev_eye_20250204_'
+      ref_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_dev_eye_ref_bcs.full.20250204.csv.gz'
+      query_bcs: '/home/mcgaugheyd/git/scEiaD_modeling/data/hs111_dev_eye_query_bcs.full.20250204.csv.gz'
+      epochs: ['50','200']
+      latent: ['20','30','50']
+      hvg: ['1000','2000']
+      input_h5ad: '../../hs111.adata.solo.20250204.h5ad'
+      scanvi_on: "MajorCellType"
+      scanvi_out: "scANVI_MCT"
+      pb_group: ['leiden','leiden2','leiden3' ]
+      scib: True
+      continuous_covariate_keys: 'pct_counts_mt,pct_counts_ribo,pct_counts_protocadherin'
+      scanvi_n_epochs: "150"
+      conda: 'rscvi'
+```
+  - *Need* an `adata` `obs` column with cell type calls (above is "MajorCellType")
+  - Run sc(an)VI Snakemake pipeline. Example `/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye/snakell.sh`:
+```
+      #!/bin/bash
+      source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
+      mamba deactivate; mamba activate;
+      bash ~/git/scEiaD_modeling/Snakemake.wrapper.sh ~/git/scEiaD_modeling/workflow/Snakefile ~/git/scEiaD_modeling/config/config_hs111_dev_eye_full.yaml ~/git/scEiaD_modeling/config/cluster.json
+```
+
+## Option B
+
+Project the data onto an existing model (created from Option A)
+```
+# biowulf2
+cd /data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_developing_eye
+source /data/$USER/conda/etc/profile.d/conda.sh && source /data/$USER/conda/etc/profile.d/mamba.sh
+mamba activate rapids_singlecell
+python ~/git/scEiaD_modeling/workflow/scripts/ct_projection.py  hs111.adata.solo.20250204.h5ad models_human.tsv ct_predictions__hs111.adata.solo.20250204.csv.gz
+# note
+# cat models_human.tsv
+sanes_complete_ocular_atlas_SCP2310	/data/OGVFB_BG/scEiaD/2024_02_28/sanes_complete_ocular_ref/scanviModel.SCP2310_broad__2000hvg_200e_30l
+chen_hrca	/data/OGVFB_BG/scEiaD/2024_02_28/chen_rca/scanviModel.hrca_all_20241215__2000hvg_200e_30l
+chen_fetal_hrca	/data/OGVFB_BG/scEiaD/2024_02_28/chen_rca/scanviModel.fetal_hrca_88444d73-7f55-4a62-bcfe-e929878c6c78_20250206__2000hvg_200e_30l
+sceiad_20250107_full_mmGeneFilter	/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/full_s6_clean_model__mmGeneFilter/scanviModel.hs111_mature_eye_20250107_stage6_mmGeneFilter__2000hvg_200e_30l
+sceiad_20250107_full	/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/full_s6_clean_model/scanviModel.hs111_mature_eye_20250107_stage6__2000hvg_200e_30l
+sceiad_20250107_nonneural	/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/NONneural_cells_s6__cleanmodel/scanviModel.hs111_mature_eye_20250107_full__NONneural_s6___2000hvg_200e_30l
+sceiad_20250107_neural	/data/OGVFB_BG/scEiaD/2024_02_28/snakeout/hs111_mature_eye_full/neural_cells_s6_clean_model/scanviModel.hs111_mature_eye_20250107_full__neural_s6___2000hvg_200e_30l
+```
+
+
+#  OGVFB Created scanVI Models
 
 | Species | Set | Source | Params | Path* | Note |
 | ---- | ---- | --- | -- | ----- | ----- |
