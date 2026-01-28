@@ -33,11 +33,12 @@ old_obs = old_obs.drop(columns=[col for col in transfer_cols if col in old_obs.c
 # left join
 updated_obs = old_obs.join(new_obs[transfer_cols])
 
-
 # transfer columns over
 adata.obs[transfer_cols] = updated_obs[transfer_cols]
-adata.obs = adata.obs.drop(args.index_column, axis = 1)
-
+try:
+   adata.obs = adata.obs.drop(args.index_column, axis = 1)
+except:
+   print("Warning didn't drop index col") 
 #  
 neural_ct = ['rod','cone','horizontal','bipolar','rod bipolar', 'amacrine','retinal ganglion']
 if args.neural:
