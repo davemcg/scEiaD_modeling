@@ -24,10 +24,10 @@ def subset_adata(input_csv, input_type):
     adata_sub = adata[row_logical, ].copy()
     return(adata_sub)
 
-
 import matplotlib
 import sys
 import os
+import re
 import numpy as np
 import pandas as pd
 import random
@@ -67,11 +67,17 @@ if args.barcode:
 # plae models are built around ENSGdigit notation
 # and the .digit ending is removed from var_names
 # e.g. ENSG01931234.1 is truncated to ENSG01931234
-vn = adata.var_names
-new_vn = vn.to_series().str.replace('\.\d+','',regex=True)
-adata.var['ensembl'] = new_vn
-adata.var_names = adata.var['ensembl']
+ensembl_pattern = r'^ENS(G|MUS)[0-9]+\.[0-9]+$'
+if bool(re.match(ensembl_pattern, adata.var_names[0], re.IGNORECASE)):
+    vn = adata.var_names
+    new_vn = vn.to_series().str.replace('\.\d+','',regex=True)
+    adata.var['ensembl'] = new_vn
+    adata.var_names = adata.var['ensembl']
+
 adata.layers["counts"] = adata.X.copy()
+if 'capture_type' not in adata.obs:
+    adata.obs['capture_type'] = 'cell'
+
 adata.obs['capture_covariate'] = [a + '_' + b for a,b in zip(list(adata.obs.capture_type),list(adata.obs.study_accession))]
 #########
 # if a different species or
@@ -89,7 +95,10 @@ if args.gene_convert_file:
     gene_dict  = gene_table.set_index(gene_table.columns[key]).T.to_dict('list')
 
     vn = adata.var_names
-    digit_clean_vn = vn.to_series().str.replace('\.\d+','',regex=True)
+    if bool(re.match(ensembl_pattern, vn[0], re.IGNORECASE)):
+        digit_clean_vn = vn.to_series().str.replace('\.\d+','',regex=True)
+    else:
+        digit_clean_vn = vn
     humanized_vn = []
     for gene in digit_clean_vn:
         try:
@@ -101,6 +110,9 @@ if args.gene_convert_file:
     adata.var['converted'] = humanized_vn
     adata.var_names = adata.var['converted']
     # aggregate (requires scanpy >= 1.10)
+    if adata.var['converted'].isnull().sum() > 0:
+        adata_filtered = adata[:, ~adata.var['converted'].isnull()].copy()
+        adata = adata_filtered
     adata_agg = sc.get.aggregate(adata, by = 'converted', axis = 1, func = 'sum')
     adata_agg.layers["counts"] = sparse.csr_matrix(adata_agg.layers['sum'])
     del adata_agg.layers['sum']
