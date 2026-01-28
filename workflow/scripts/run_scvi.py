@@ -103,22 +103,27 @@ if bool(re.match(ensembl_pattern, adata.var_names[0], re.IGNORECASE)):
     adata.var_names = adata.var['ensembl']
 
 def subset_adata(input_csv, input_type):
-    partition_samples = pd.read_csv(input_csv, header = None)[0]
+    partition_samples = pd.read_csv(input_csv, header=None)[0].astype(str)
+    # 1. Vectorized filtering 
     if input_type == 'sample_accession':
         print('subset by sample accession')
-        row_logical = np.array([s in partition_samples.values for s in adata.obs.sample_accession])
+        mask = adata.obs['sample_accession'].isin(partition_samples)
     else:
         print('subset by barcode')
-        #row_logical = partition_samples.values 
-        row_logical =  np.array([s in partition_samples.values for s in adata.obs.index])
-    adata_sub = adata[row_logical, ].copy()
+        mask = adata.obs.index.isin(partition_samples)
+    # Create the subset
+    adata_sub = adata[mask]
+    # 2. Filter doublets using the view
     if "solo_doublet" in adata_sub.obs.columns:
-        adata_sub = adata_sub[~adata_sub.obs.solo_doublet].copy()
+        adata_sub = adata_sub[~adata_sub.obs.solo_doublet]
+    # 3. Place the subset in memory
+    adata_sub = adata_sub.copy()
+    # 4. Standard preprocessing
     adata_sub.layers["counts"] = adata_sub.X.copy()
     sc.pp.normalize_total(adata_sub)
     sc.pp.log1p(adata_sub)
-    print('adata subset made')
-    return(adata_sub)
+    print(f'adata subset made with {adata_sub.n_obs} cells')
+    return adata_sub
 
 def run_umap(adata_u):
     rsc.pp.neighbors(adata_u, use_rep=SCVI_LATENT_KEY)
