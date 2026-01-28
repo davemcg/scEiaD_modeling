@@ -5,11 +5,11 @@ import argparse
 parser = argparse.ArgumentParser(
                     prog='Merge same species adata')
 
-parser.add_argument('adata_files_txt')
-parser.add_argument('sample_meta_tsv')
-parser.add_argument('cell_label_csv')
-parser.add_argument('output_h5ad_name')
-parser.add_argument('output_obs_name')
+parser.add_argument('--adata_files_txt', help = 'Required. New line separated h5ad files')
+parser.add_argument('--sample_meta_tsv', help = 'Required. Joins on the sample_accession column')
+parser.add_argument('--cell_label_csv', help = 'Optional. Joins on the barcode column', default = None)
+parser.add_argument('--output_h5ad_name')
+parser.add_argument('--output_obs_name')
 args = parser.parse_args()
 
 
@@ -40,15 +40,17 @@ adata.obs['barcode'] = adata.obs.index
 adata.obs = adata.obs.merge(smeta, on = 'sample_accession')
 adata.obs.index = adata.obs['barcode']
 
-#cmeta = pd.read_csv('/home/mcgaugheyd/git/scEiaD_quant/cell_labels.csv.gz')
-cmeta = pd.read_csv(args.cell_label_csv)
+if args.cell_label_csv:
+    cmeta = pd.read_csv(args.cell_label_csv)
+    cmeta.index = cmeta['barcode']
+    adata.obs = adata.obs.join(cmeta.drop(columns = ['barcode']))
+else:
+    print("Warning, no cell metadata being added to adata")
 
-cmeta.index = cmeta['barcode']
-adata.obs = adata.obs.join(cmeta.drop(columns = ['barcode']))
 
 adata.var['id_name'] = adata_dict[accession].var.id_name
 
-#adata.write_h5ad('hs111.adata.solo.h5ad')
+# Drop columns that are entirely empty
 for i in adata.obs.columns:
     if adata.obs[i].count() == 0:
         adata.obs = adata.obs.drop(i, axis = 1)
@@ -56,4 +58,3 @@ for i in adata.obs.columns:
 adata.write_h5ad(args.output_h5ad_name)
 obs = pd.DataFrame(adata.obs)
 obs.to_csv(args.output_obs_name)
-# adata[~adata.obs.solo_doublet]
